@@ -26,6 +26,14 @@
 #include <QTimer>
 #include <memory>
 
+#ifdef Q_OS_MACOS
+#include <QByteArray>
+#include <QStringList>
+#include <climits>
+#include <cstdio>
+#include <mach-o/dyld.h>
+#endif
+
 using namespace awc;
 
 namespace {
@@ -57,10 +65,60 @@ protected:
         return QObject::eventFilter(obj, event);
     }
 };
+
+#ifdef Q_OS_MACOS
+// An inherited QT_QPA_PLATFORM (e.g. "offscreen" from a test / CI shell) that
+// names a platform plugin the deployed bundle doesn't ship (it ships only
+// cocoa) makes QGuiApplication abort with "Could not find the Qt platform
+// plugin". In a deployed .app, drop such a value so the app starts with cocoa.
+// Screenshot mode needs the requested plugin: returns false with a clear error.
+// Builds without Contents/PlugIns/platforms (build tree) are left untouched.
+bool sanitizeQpaPlatform()
+{
+    const QByteArray value = qgetenv("QT_QPA_PLATFORM");
+    if (value.trimmed().isEmpty())
+        return true;
+    char exe[PATH_MAX];
+    uint32_t size = sizeof(exe);
+    if (_NSGetExecutablePath(exe, &size) != 0)
+        return true;
+    const QString bundleDir = QFileInfo(QString::fromUtf8(exe)).canonicalPath()
+        + QStringLiteral("/../PlugIns/platforms");
+    if (!QFileInfo(bundleDir).isDir())
+        return true;
+    QStringList dirs { bundleDir };
+    for (const QString &p : qEnvironmentVariable("QT_PLUGIN_PATH").split(QLatin1Char(':'), Qt::SkipEmptyParts))
+        dirs << p + QStringLiteral("/platforms");
+    dirs << qEnvironmentVariable("QT_QPA_PLATFORM_PLUGIN_PATH").split(QLatin1Char(':'), Qt::SkipEmptyParts);
+    // "name", "name:options" or a ';' separated fallback list
+    for (const QByteArray &entry : value.split(';')) {
+        const QString name = QString::fromLocal8Bit(entry.split(':').constFirst()).trimmed();
+        if (name.isEmpty())
+            continue;
+        for (const QString &dir : std::as_const(dirs))
+            if (QFileInfo::exists(dir + QStringLiteral("/libq") + name + QStringLiteral(".dylib")))
+                return true;
+    }
+    if (!qEnvironmentVariableIsEmpty("WATT_SCREENSHOT_DIR")) {
+        std::fprintf(stderr, "Screenshot mode: QT_QPA_PLATFORM=%s is not available in this app bundle "
+                             "(%s). Add the platform plugin to the bundle or unset QT_QPA_PLATFORM.\n",
+                     value.constData(), qPrintable(QDir::cleanPath(bundleDir)));
+        return false;
+    }
+    std::fprintf(stderr, "Warning: ignoring QT_QPA_PLATFORM=%s (platform plugin not in the app bundle), "
+                         "using the default platform\n", value.constData());
+    qunsetenv("QT_QPA_PLATFORM");
+    return true;
+}
+#endif
 } // namespace
 
 int main(int argc, char *argv[])
 {
+#ifdef Q_OS_MACOS
+    if (!sanitizeQpaPlatform())
+        return 1;
+#endif
     QGuiApplication app(argc, argv);
     QGuiApplication::setOrganizationName(QStringLiteral("Artilody"));
     QGuiApplication::setOrganizationDomain(QStringLiteral("artilody.app"));
