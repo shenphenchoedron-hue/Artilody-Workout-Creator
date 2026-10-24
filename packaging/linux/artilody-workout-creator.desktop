@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Artilody Workout Creator
+GenericName=Workout Editor
+Comment=Create Artilody Watts Trainer and Zwift workouts
+Exec=artilody-workout-creator %f
+TryExec=artilody-workout-creator
+Icon=artilody-workout-creator
+Terminal=false
+StartupNotify=true
+StartupWMClass=artilody-workout-creator
+Categories=Sports;Utility;
+Keywords=cycling;rowing;workout;zwift;zwo;awt;ftp;interval;

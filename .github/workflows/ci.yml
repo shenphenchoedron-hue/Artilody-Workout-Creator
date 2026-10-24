@@ -1,0 +1,55 @@
+name: CI
+
+# Quick check on every push / pull request: build with the oldest supported Qt
+# (Debian 12's Qt 6.4.2), run the unit tests and a QML smoke test.
+on:
+  push:
+    branches: [main]
+    tags-ignore: ["*"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    name: Linux (Debian 12, Qt 6.4)
+    runs-on: ubuntu-24.04
+    container: debian:bookworm
+    defaults:
+      run:
+        shell: bash
+    env:
+      DEBIAN_FRONTEND: noninteractive
+    steps:
+      - name: Install build dependencies
+        run: |
+          set -euxo pipefail
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            build-essential cmake ninja-build git ca-certificates libgl-dev \
+            qt6-base-dev qt6-declarative-dev qt6-qpa-plugins \
+            qml6-module-qtquick qml6-module-qtquick-controls qml6-module-qtquick-layouts \
+            qml6-module-qtquick-dialogs qml6-module-qtquick-window qml6-module-qtquick-templates \
+            qml6-module-qtqml-workerscript qml6-module-qtqml-models fonts-dejavu-core
+
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DAWC_BUILD_TESTS=ON
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Unit tests
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: ctest --test-dir build --output-on-failure
+
+      - name: QML smoke test
+        env:
+          QT_QPA_PLATFORM: offscreen
+          QT_QUICK_BACKEND: software
+        run: |
+          export XDG_RUNTIME_DIR=/tmp/runtime-$(id -u); mkdir -p -m 0700 "$XDG_RUNTIME_DIR"
+          packaging/ci/smoke-test.sh build/artilody-workout-creator smoke-shots

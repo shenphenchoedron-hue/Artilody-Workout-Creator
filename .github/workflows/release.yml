@@ -1,0 +1,494 @@
+name: Release
+
+# Builds installable packages for Linux (.deb), Windows (zip + installer) and
+# macOS (universal DMG). Pushing a tag "v*" also publishes a GitHub release;
+# workflow_dispatch is a dry run (builds and uploads artifacts only).
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  QT_VERSION: "6.8.3"
+  FALLBACK_VERSION: "1.0.0"
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Linux: native .deb packages built against the distribution's Qt
+  # (Qt 6.4.2 on Debian 12, Raspberry Pi OS and Ubuntu 24.04).
+  # ---------------------------------------------------------------------------
+  linux-deb:
+    name: Linux .deb (${{ matrix.suffix }})
+    runs-on: ${{ matrix.runner }}
+    container: ${{ matrix.image }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: debian:bookworm
+            runner: ubuntu-24.04
+            suffix: debian12_amd64
+            arch: amd64
+          - image: ubuntu:24.04
+            runner: ubuntu-24.04
+            suffix: ubuntu24.04_amd64
+            arch: amd64
+          # Raspberry Pi OS 64-bit (Bookworm) is Debian 12 arm64 (Pi 3/4/5/400).
+          # Built natively on GitHub's arm64 runner (no emulation).
+          - image: debian:bookworm
+            runner: ubuntu-24.04-arm
+            suffix: raspberrypi-os-bookworm_arm64
+            arch: arm64
+    defaults:
+      run:
+        shell: bash
+    env:
+      DEBIAN_FRONTEND: noninteractive
+      TZ: Etc/UTC
+    steps:
+      - name: Install build dependencies
+        run: |
+          set -euxo pipefail
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            build-essential cmake ninja-build dpkg-dev file git ca-certificates \
+            libgl-dev \
+            qt6-base-dev qt6-declarative-dev qt6-qpa-plugins \
+            qml6-module-qtquick qml6-module-qtquick-controls qml6-module-qtquick-layouts \
+            qml6-module-qtquick-dialogs qml6-module-qtquick-window qml6-module-qtquick-templates \
+            qml6-module-qtqml-workerscript qml6-module-qtqml-models \
+            fonts-dejavu-core
+
+      - uses: actions/checkout@v4
+
+      - name: Determine version
+        id: version
+        run: |
+          cmake_version=$(sed -nE 's/^[[:space:]]*VERSION[[:space:]]+([0-9]+\.[0-9]+\.[0-9]+).*/\1/p' CMakeLists.txt | head -n1)
+          if [[ "${GITHUB_REF_TYPE}" == "tag" && "${GITHUB_REF_NAME}" == v* ]]; then
+            version="${GITHUB_REF_NAME#v}"
+          else
+            version="${cmake_version:-$FALLBACK_VERSION}"
+          fi
+          version="${version:-$FALLBACK_VERSION}"
+          if [[ -n "$cmake_version" && "$version" != "$cmake_version" ]]; then
+            echo "::warning::Tag version $version differs from project() version $cmake_version in CMakeLists.txt"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Version: $version"
+
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DAWC_BUILD_TESTS=ON
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Unit tests
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: ctest --test-dir build --output-on-failure
+
+      - name: QML smoke test (build tree)
+        env:
+          QT_QPA_PLATFORM: offscreen
+          QT_QUICK_BACKEND: software
+        run: |
+          export XDG_RUNTIME_DIR=/tmp/runtime-$(id -u); mkdir -p -m 0700 "$XDG_RUNTIME_DIR"
+          bin=$(find build -maxdepth 3 -type f -name artilody-workout-creator -perm -u+x | head -n1)
+          test -n "$bin"
+          packaging/ci/smoke-test.sh "$bin" "smoke-shots/build"
+
+      - name: Create .deb (cpack)
+        id: deb
+        run: |
+          set -euxo pipefail
+          (cd build && cpack -G DEB)
+          deb=$(ls build/*.deb | head -n1)
+          test -f "$deb"
+          asset="artilody-workout-creator_${{ steps.version.outputs.version }}_${{ matrix.suffix }}.deb"
+          mkdir -p dist
+          cp "$deb" "dist/$asset"
+          dpkg-deb --info "dist/$asset"
+          dpkg-deb --contents "dist/$asset"
+          arch=$(dpkg-deb --field "dist/$asset" Architecture)
+          if [[ "$arch" != "${{ matrix.arch }}" ]]; then
+            echo "::error::Package architecture is $arch, expected ${{ matrix.arch }}"; exit 1
+          fi
+          echo "asset=$asset" >> "$GITHUB_OUTPUT"
+
+      - name: Install .deb and smoke test the installed app
+        env:
+          QT_QPA_PLATFORM: offscreen
+          QT_QUICK_BACKEND: software
+        run: |
+          set -euxo pipefail
+          apt-get install -y "./dist/${{ steps.deb.outputs.asset }}"
+          test -x /usr/bin/artilody-workout-creator
+          test -f /usr/share/applications/artilody-workout-creator.desktop
+          test -f /usr/share/icons/hicolor/256x256/apps/artilody-workout-creator.png
+          export XDG_RUNTIME_DIR=/tmp/runtime-$(id -u); mkdir -p -m 0700 "$XDG_RUNTIME_DIR"
+          packaging/ci/smoke-test.sh /usr/bin/artilody-workout-creator "smoke-shots/installed"
+
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots-${{ matrix.suffix }}
+          path: smoke-shots/
+          if-no-files-found: ignore
+
+      - name: Upload package
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-deb-${{ matrix.suffix }}
+          path: dist/*.deb
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------------------
+  # Windows: windeployqt folder -> portable zip + Inno Setup installer.
+  # ---------------------------------------------------------------------------
+  windows:
+    name: Windows x64
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Determine version
+        id: version
+        shell: bash
+        run: |
+          cmake_version=$(sed -nE 's/^[[:space:]]*VERSION[[:space:]]+([0-9]+\.[0-9]+\.[0-9]+).*/\1/p' CMakeLists.txt | head -n1)
+          if [[ "${GITHUB_REF_TYPE}" == "tag" && "${GITHUB_REF_NAME}" == v* ]]; then
+            version="${GITHUB_REF_NAME#v}"
+          else
+            version="${cmake_version:-$FALLBACK_VERSION}"
+          fi
+          version="${version:-$FALLBACK_VERSION}"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Version: $version"
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          host: windows
+          target: desktop
+          arch: win64_msvc2022_64
+          cache: true
+
+      - name: Set up MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DAWC_BUILD_TESTS=ON
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Unit tests
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Deploy (windeployqt)
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $stage = 'dist/windows/Artilody Workout Creator'
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          $exe = Get-ChildItem -Path build -Recurse -File -Filter 'Artilody Workout Creator.exe' | Select-Object -First 1
+          if (-not $exe) { throw "Artilody Workout Creator.exe not found in build/" }
+          Write-Output "Found $($exe.FullName)"
+          Copy-Item -LiteralPath $exe.FullName -Destination $stage
+          windeployqt --release --qmldir qml --qmldir shared/qml --no-compiler-runtime --no-translations --no-opengl-sw "$stage/Artilody Workout Creator.exe"
+          if ($LASTEXITCODE -ne 0) { throw "windeployqt failed ($LASTEXITCODE)" }
+          # The creator uses no SQL / network / multimedia.
+          Remove-Item -LiteralPath "$stage/sqldrivers" -Recurse -ErrorAction SilentlyContinue
+          # App-local MSVC runtime so the zip also runs without the VC++ redistributable.
+          $crt = Get-ChildItem -Path (Join-Path $env:VCToolsRedistDir 'x64') -Directory -Filter 'Microsoft.VC*.CRT' | Select-Object -First 1
+          if ($crt) {
+            Copy-Item -Path (Join-Path $crt.FullName '*.dll') -Destination $stage
+          } else {
+            Write-Output "::warning::MSVC runtime DLLs not found under VCToolsRedistDir='$env:VCToolsRedistDir'"
+          }
+          Get-ChildItem -LiteralPath $stage -Recurse | Select-Object -ExpandProperty FullName
+
+      - name: Add offscreen platform plugin (smoke test only)
+        id: offscreen
+        run: |
+          $plugin = Join-Path $env:QT_ROOT_DIR 'plugins/platforms/qoffscreen.dll'
+          if (Test-Path -LiteralPath $plugin) {
+            Copy-Item -LiteralPath $plugin -Destination 'dist/windows/Artilody Workout Creator/platforms/'
+            "available=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          } else {
+            Write-Output "::warning::qoffscreen.dll not found - skipping smoke test"
+            "available=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          }
+
+      - name: QML smoke test (deployed folder)
+        if: steps.offscreen.outputs.available == 'true'
+        shell: bash
+        env:
+          QT_QPA_PLATFORM: offscreen
+          QT_QUICK_BACKEND: software
+        run: |
+          # Make sure the deployed files are used, not the Qt installation.
+          unset QT_PLUGIN_PATH QML2_IMPORT_PATH QML_IMPORT_PATH
+          packaging/ci/smoke-test.sh "dist/windows/Artilody Workout Creator/Artilody Workout Creator.exe" "smoke-shots/windows"
+
+      - name: Remove offscreen platform plugin
+        if: always()
+        run: Remove-Item -LiteralPath 'dist/windows/Artilody Workout Creator/platforms/qoffscreen.dll' -ErrorAction SilentlyContinue
+
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots-windows
+          path: smoke-shots/
+          if-no-files-found: ignore
+
+      - name: Create zip
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $ver = '${{ steps.version.outputs.version }}'
+          Compress-Archive -Path 'dist/windows/Artilody Workout Creator' -DestinationPath "dist/ArtilodyWorkoutCreator-$ver-windows-x64.zip" -CompressionLevel Optimal
+
+      - name: Build installer (Inno Setup)
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $ver = '${{ steps.version.outputs.version }}'
+          $iscc = (Get-Command iscc -ErrorAction SilentlyContinue).Source
+          $default = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
+          if (-not $iscc -and (Test-Path -LiteralPath $default)) { $iscc = $default }
+          if (-not $iscc) {
+            choco install innosetup -y --no-progress
+            $iscc = $default
+          }
+          Write-Output "Using $iscc"
+          $source = (Resolve-Path -LiteralPath 'dist/windows/Artilody Workout Creator').Path
+          $output = (Resolve-Path -LiteralPath 'dist').Path
+          & $iscc "/DAppVersion=$ver" "/DSourceDir=$source" "/DOutputDir=$output" 'packaging/windows/installer.iss'
+          if ($LASTEXITCODE -ne 0) { throw "ISCC failed ($LASTEXITCODE)" }
+          $setup = "dist/ArtilodyWorkoutCreator-$ver-windows-x64-setup.exe"
+          if (-not (Test-Path -LiteralPath $setup)) { throw "$setup was not created" }
+          Get-ChildItem dist -File
+
+      - name: Upload packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-windows
+          path: |
+            dist/ArtilodyWorkoutCreator-*-windows-x64.zip
+            dist/ArtilodyWorkoutCreator-*-windows-x64-setup.exe
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------------------
+  # macOS: universal (arm64 + x86_64) app bundle in a drag-and-drop DMG.
+  # ---------------------------------------------------------------------------
+  macos:
+    name: macOS universal
+    runs-on: macos-14
+    defaults:
+      run:
+        shell: bash
+    env:
+      APP: build/Artilody Workout Creator.app
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Determine version
+        id: version
+        run: |
+          cmake_version=$(sed -nE 's/^[[:space:]]*VERSION[[:space:]]+([0-9]+\.[0-9]+\.[0-9]+).*/\1/p' CMakeLists.txt | head -n1)
+          if [[ "${GITHUB_REF_TYPE}" == "tag" && "${GITHUB_REF_NAME}" == v* ]]; then
+            version="${GITHUB_REF_NAME#v}"
+          else
+            version="${cmake_version:-$FALLBACK_VERSION}"
+          fi
+          version="${version:-$FALLBACK_VERSION}"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Version: $version"
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          host: mac
+          target: desktop
+          arch: clang_64
+          cache: true
+
+      - name: Install Ninja
+        run: command -v ninja >/dev/null || brew install ninja
+
+      - name: Configure
+        run: >
+          cmake -S . -B build -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DAWC_BUILD_TESTS=ON
+          "-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64"
+          -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Unit tests
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: ctest --test-dir build --output-on-failure
+
+      - name: QML smoke test (build tree)
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: packaging/ci/smoke-test.sh "$APP/Contents/MacOS/Artilody Workout Creator" "smoke-shots/macos"
+
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots-macos
+          path: smoke-shots/
+          if-no-files-found: ignore
+
+      - name: Deploy (macdeployqt)
+        run: |
+          set -euo pipefail
+          macdeployqt "$APP" -qmldir=qml -qmldir=shared/qml -always-overwrite -verbose=1 2>&1 | tee macdeployqt.log
+          if grep -q "ERROR" macdeployqt.log; then
+            echo "::warning::macdeployqt reported errors (see log above)"
+          fi
+          # The creator uses no SQL and must never ship the offscreen platform plugin.
+          rm -rf "$APP/Contents/PlugIns/sqldrivers"
+          rm -f "$APP/Contents/PlugIns/platforms/libqoffscreen.dylib"
+          /usr/libexec/PlistBuddy -c "Set :LSMinimumSystemVersion 12.0" "$APP/Contents/Info.plist"
+
+      - name: Ad-hoc code signing
+        run: |
+          set -euo pipefail
+          xattr -cr "$APP"
+          codesign --force --deep --sign - "$APP"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+
+      - name: Check universal binaries
+        run: |
+          set -uo pipefail
+          exe="$APP/Contents/MacOS/Artilody Workout Creator"
+          lipo -info "$exe"
+          archs=$(lipo -archs "$exe")
+          if [[ "$archs" != *arm64* || "$archs" != *x86_64* ]]; then
+            echo "::error::Main executable is not universal (archs: $archs)"
+            exit 1
+          fi
+          thin=0
+          while IFS= read -r -d '' f; do
+            if file "$f" | grep -q "Mach-O"; then
+              a=$(lipo -archs "$f" 2>/dev/null || true)
+              if [[ "$a" != *arm64* || "$a" != *x86_64* ]]; then
+                echo "::warning::Not universal: ${f#$APP/} ($a)"
+                thin=$((thin + 1))
+              fi
+            fi
+          done < <(find "$APP/Contents" -type f -print0)
+          echo "Non-universal Mach-O files: $thin"
+
+      - name: Create DMG
+        run: |
+          set -euo pipefail
+          ver='${{ steps.version.outputs.version }}'
+          dmg="dist/ArtilodyWorkoutCreator-${ver}-macOS-universal.dmg"
+          stage="$RUNNER_TEMP/dmg"
+          rm -rf "$stage"; mkdir -p "$stage" dist
+          ditto "$APP" "$stage/Artilody Workout Creator.app"
+          ln -s /Applications "$stage/Applications"
+          for i in 1 2 3; do
+            if hdiutil create -volname "Artilody Workout Creator" -srcfolder "$stage" -ov -format UDZO "$dmg"; then
+              break
+            fi
+            echo "hdiutil failed (attempt $i), retrying..."; sleep 10
+          done
+          test -f "$dmg"
+          hdiutil verify "$dmg"
+          ls -l dist
+
+      - name: Upload package
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-macos
+          path: dist/ArtilodyWorkoutCreator-*-macOS-universal.dmg
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------------------
+  # Publish the GitHub release (tag pushes only).
+  # ---------------------------------------------------------------------------
+  release:
+    name: GitHub release
+    needs: [linux-deb, windows, macos]
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Determine version
+        id: version
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          echo "version=${version:-$FALLBACK_VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Download packages
+        uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: dist
+          merge-multiple: true
+
+      - name: Check assets and prepare release notes
+        run: |
+          set -euo pipefail
+          v='${{ steps.version.outputs.version }}'
+          ls -l dist
+          for f in \
+            "artilody-workout-creator_${v}_debian12_amd64.deb" \
+            "artilody-workout-creator_${v}_ubuntu24.04_amd64.deb" \
+            "artilody-workout-creator_${v}_raspberrypi-os-bookworm_arm64.deb" \
+            "ArtilodyWorkoutCreator-${v}-windows-x64.zip" \
+            "ArtilodyWorkoutCreator-${v}-windows-x64-setup.exe" \
+            "ArtilodyWorkoutCreator-${v}-macOS-universal.dmg"; do
+            test -f "dist/$f" || { echo "::error::Missing asset $f"; exit 1; }
+          done
+          sed "s/{{VERSION}}/${v}/g" packaging/release-notes.md > "$RUNNER_TEMP/release-notes.md"
+          if grep -q '{{' "$RUNNER_TEMP/release-notes.md"; then
+            echo "::error::Unreplaced placeholder in release notes"; exit 1
+          fi
+          (cd dist && sha256sum *) | tee "$RUNNER_TEMP/SHA256SUMS.txt"
+          mv "$RUNNER_TEMP/SHA256SUMS.txt" dist/SHA256SUMS.txt
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Artilody Workout Creator v${{ steps.version.outputs.version }}
+          body_path: ${{ runner.temp }}/release-notes.md
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          make_latest: ${{ !contains(github.ref_name, '-') }}
+          fail_on_unmatched_files: true
+          files: |
+            dist/*.deb
+            dist/*.zip
+            dist/*.exe
+            dist/*.dmg
+            dist/SHA256SUMS.txt
