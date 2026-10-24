@@ -370,10 +370,30 @@ jobs:
           if grep -q "ERROR" macdeployqt.log; then
             echo "::warning::macdeployqt reported errors (see log above)"
           fi
-          # The creator uses no SQL and must never ship the offscreen platform plugin.
-          rm -rf "$APP/Contents/PlugIns/sqldrivers"
-          rm -f "$APP/Contents/PlugIns/platforms/libqoffscreen.dylib"
+          packaging/macos/prune_bundle.sh "$APP"
           /usr/libexec/PlistBuddy -c "Set :LSMinimumSystemVersion 12.0" "$APP/Contents/Info.plist"
+
+      # Runs the deployed bundle (frameworks, plugins and QML from inside the
+      # .app) before the offscreen platform plugin is removed.
+      - name: QML smoke test (deployed bundle)
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          cp "$QT_ROOT_DIR/plugins/platforms/libqoffscreen.dylib" "$APP/Contents/PlugIns/platforms/"
+          unset QT_PLUGIN_PATH QML2_IMPORT_PATH QML_IMPORT_PATH
+          packaging/ci/smoke-test.sh "$APP/Contents/MacOS/Artilody Workout Creator" "smoke-shots/macos-deployed"
+
+      - name: Remove offscreen platform plugin
+        if: always()
+        run: rm -f "$APP/Contents/PlugIns/platforms/libqoffscreen.dylib"
+
+      - name: Upload screenshots (deployed bundle)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots-macos-deployed
+          path: smoke-shots/macos-deployed/
+          if-no-files-found: ignore
 
       - name: Ad-hoc code signing
         run: |

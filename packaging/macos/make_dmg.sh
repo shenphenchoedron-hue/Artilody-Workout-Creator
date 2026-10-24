@@ -26,8 +26,8 @@ mkdir -p "$DIST"
 rm -rf "$APP" "$DMG"
 cp -R "$BUILD/$NAME.app" "$APP"
 "$QT/bin/macdeployqt" "$APP" -qmldir="$HERE/qml" -qmldir="$ROOT/qml" -always-overwrite
-# The creator uses no SQL and must never ship the offscreen platform plugin.
-rm -rf "$APP/Contents/PlugIns/sqldrivers"
+# No SQL / LocalStorage in the creator, and never ship the offscreen platform plugin.
+"$HERE/packaging/macos/prune_bundle.sh" "$APP"
 rm -f "$APP/Contents/PlugIns/platforms/libqoffscreen.dylib"
 /usr/libexec/PlistBuddy -c "Set :LSMinimumSystemVersion 12.0" "$APP/Contents/Info.plist"
 xattr -cr "$APP"
