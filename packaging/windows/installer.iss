@@ -1,13 +1,13 @@
 ; Inno Setup script for Artilody Workout Creator (Windows x64).
 ;
 ; Built in CI (.github/workflows/release.yml):
-;   iscc /DAppVersion=1.1.0 /DSourceDir=<staging dir> /DOutputDir=<dist dir> packaging\windows\installer.iss
+;   iscc /DAppVersion=1.1.1 /DSourceDir=<staging dir> /DOutputDir=<dist dir> packaging\windows\installer.iss
 ;
 ; SourceDir must contain the windeployqt'ed application:
 ;   "Artilody Workout Creator.exe", Qt DLLs, plugins, qml\ ...
 
 #ifndef AppVersion
-  #define AppVersion "1.1.0"
+  #define AppVersion "1.1.1"
 #endif
 #ifndef SourceDir
   #define SourceDir "..\..\dist\windows\Artilody Workout Creator"

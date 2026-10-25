@@ -2,6 +2,10 @@
 
 ## What's new in {{VERSION}}
 
+- **Fixed: moving blocks by dragging** – with many blocks the blue drop line could land several blocks away from the pointer, which made it almost impossible to drag blocks past many others. The line now always marks the block under the pointer, and the timeline scrolls smoothly while you hold the pointer near its left or right edge.
+
+### New in 1.1.0
+
 - **Everything in % of FTP**: block cards, *Interval Settings* and the chart show power as % of FTP, so a workout scales to every rider's FTP. Watts are only shown as a hint.
 - **Interval sets with repeats**: *Intervals* asks for the number of repeats, the interval time and % FTP and the recovery time and % FTP, e.g. 5 × 30 s @ 120 % with 1 min recovery @ 55 %.
 - **Ramps and staircases**: *Ramp / Steps* builds a rising or falling staircase (number of steps, time per step, first and last step in % FTP) or one smooth ramp. Every step stays editable on its own.

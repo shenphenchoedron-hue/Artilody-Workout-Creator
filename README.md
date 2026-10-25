@@ -82,17 +82,17 @@ laptop and take the workouts to your training computer or to Zwift.
 
 ## Download
 
-Version **1.1.0** – all files are on the [release page](https://github.com/shenphenchoedron-hue/Artilody-Workout-Creator/releases/latest).
+Version **1.1.1** – all files are on the [release page](https://github.com/shenphenchoedron-hue/Artilody-Workout-Creator/releases/latest).
 
 | Platform | Download |
 |---|---|
-| **Windows 10/11** (64-bit) – installer | [ArtilodyWorkoutCreator-1.1.0-windows-x64-setup.exe](https://github.com/shenphenchoedron-hue/Artilody-Workout-Creator/releases/download/v1.1.0/ArtilodyWorkoutCreator-1.1.0-windows-x64-setup.exe) |
-| **Windows 10/11** (64-bit) – portable ZIP | [ArtilodyWorkoutCreator-1.1.0-windows-x64.zip](https://github.com/shenphenchoedron-hue/Artilody-Workout-Creator/releases/download/v1.1.0/ArtilodyWorkoutCreator-1.1.0-windows-x64.zip) |
-| **macOS 12+** (Apple Silicon & Intel, universal) | [ArtilodyWorkoutCreator-1.1.0-macOS-universal.dmg](https://github.com/shenphenchoedron-hue/Artilody-Workout-Creator/releases/download/v1.1.0/ArtilodyWorkoutCreator-1.1.0-macOS-universal.dmg) |
-| **Debian 12** Bookworm (amd64) | [artilody-workout-creator_1.1.0_debian12_amd64.deb](https://github.com/shenphenchoedron-hue/Artilody-Workout-Creator/releases/download/v1.1.0/artilody-workout-creator_1.1.0_debian12_amd64.deb) |
-| **Ubuntu 24.04** LTS (amd64) | [artilody-workout-creator_1.1.0_ubuntu24.04_amd64.deb](https://github.com/shenphenchoedron-hue/Artilody-Workout-Creator/releases/download/v1.1.0/artilody-workout-creator_1.1.0_ubuntu24.04_amd64.deb) |
-| **Raspberry Pi OS** 64-bit Bookworm (arm64, Pi 3/4/5/400) | [artilody-workout-creator_1.1.0_raspberrypi-os-bookworm_arm64.deb](https://github.com/shenphenchoedron-hue/Artilody-Workout-Creator/releases/download/v1.1.0/artilody-workout-creator_1.1.0_raspberrypi-os-bookworm_arm64.deb) |
-| Checksums | [SHA256SUMS.txt](https://github.com/shenphenchoedron-hue/Artilody-Workout-Creator/releases/download/v1.1.0/SHA256SUMS.txt) |
+| **Windows 10/11** (64-bit) – installer | [ArtilodyWorkoutCreator-1.1.1-windows-x64-setup.exe](https://github.com/shenphenchoedron-hue/Artilody-Workout-Creator/releases/download/v1.1.1/ArtilodyWorkoutCreator-1.1.1-windows-x64-setup.exe) |
+| **Windows 10/11** (64-bit) – portable ZIP | [ArtilodyWorkoutCreator-1.1.1-windows-x64.zip](https://github.com/shenphenchoedron-hue/Artilody-Workout-Creator/releases/download/v1.1.1/ArtilodyWorkoutCreator-1.1.1-windows-x64.zip) |
+| **macOS 12+** (Apple Silicon & Intel, universal) | [ArtilodyWorkoutCreator-1.1.1-macOS-universal.dmg](https://github.com/shenphenchoedron-hue/Artilody-Workout-Creator/releases/download/v1.1.1/ArtilodyWorkoutCreator-1.1.1-macOS-universal.dmg) |
+| **Debian 12** Bookworm (amd64) | [artilody-workout-creator_1.1.1_debian12_amd64.deb](https://github.com/shenphenchoedron-hue/Artilody-Workout-Creator/releases/download/v1.1.1/artilody-workout-creator_1.1.1_debian12_amd64.deb) |
+| **Ubuntu 24.04** LTS (amd64) | [artilody-workout-creator_1.1.1_ubuntu24.04_amd64.deb](https://github.com/shenphenchoedron-hue/Artilody-Workout-Creator/releases/download/v1.1.1/artilody-workout-creator_1.1.1_ubuntu24.04_amd64.deb) |
+| **Raspberry Pi OS** 64-bit Bookworm (arm64, Pi 3/4/5/400) | [artilody-workout-creator_1.1.1_raspberrypi-os-bookworm_arm64.deb](https://github.com/shenphenchoedron-hue/Artilody-Workout-Creator/releases/download/v1.1.1/artilody-workout-creator_1.1.1_raspberrypi-os-bookworm_arm64.deb) |
+| Checksums | [SHA256SUMS.txt](https://github.com/shenphenchoedron-hue/Artilody-Workout-Creator/releases/download/v1.1.1/SHA256SUMS.txt) |
 
 ### Installation
 
@@ -112,9 +112,9 @@ xattr -cr "/Applications/Artilody Workout Creator.app"
 libraries):
 
 ```sh
-sudo apt install ./artilody-workout-creator_1.1.0_debian12_amd64.deb                # Debian 12
-sudo apt install ./artilody-workout-creator_1.1.0_ubuntu24.04_amd64.deb             # Ubuntu 24.04
-sudo apt install ./artilody-workout-creator_1.1.0_raspberrypi-os-bookworm_arm64.deb # Raspberry Pi OS 64-bit
+sudo apt install ./artilody-workout-creator_1.1.1_debian12_amd64.deb                # Debian 12
+sudo apt install ./artilody-workout-creator_1.1.1_ubuntu24.04_amd64.deb             # Ubuntu 24.04
+sudo apt install ./artilody-workout-creator_1.1.1_raspberrypi-os-bookworm_arm64.deb # Raspberry Pi OS 64-bit
 ```
 
 Start it from the application menu or run `artilody-workout-creator`. Uninstall with

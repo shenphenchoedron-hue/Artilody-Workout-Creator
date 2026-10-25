@@ -12,4 +12,4 @@ this folder with:
 tools/sync_shared.sh <this checkout> <Artilody Watts Trainer checkout>
 ```
 
-Synced from Artilody Watts Trainer commit `e0f8732`.
+Synced from Artilody Watts Trainer commit `b39ec4d`.

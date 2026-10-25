@@ -423,25 +423,55 @@ Item {
             model: Builder.intervals
             boundsBehavior: Flickable.StopAtBounds
             ScrollBar.horizontal: ScrollBar { policy: ScrollBar.AsNeeded; height: 6 }
+            // while dragging keep every card alive: the dragged card owns the
+            // mouse grab and must not be destroyed when auto-scroll moves it out of view
+            cacheBuffer: dragFrom >= 0 ? Math.max(320, count * (cardWidth + spacing)) : 320
 
             readonly property int cardWidth: 150
             property int dragFrom: -1       // index of the dragged card, -1 = no drag
             property int dropIndex: -1
             property real dragX: 0          // pointer x in content coordinates
+            property real dragViewX: 0      // pointer x in view coordinates
             property string dragName
             property int dragZone: 0
 
-            function updateDrop(viewX, contentPos) {
-                dragX = contentPos
-                var slot = Math.floor((contentPos + spacing / 2) / (cardWidth + spacing))
-                dropIndex = Math.max(0, Math.min(count - 1, slot))
-                // auto-scroll near the edges
-                var maxX = contentWidth - width + rightMargin
-                if (contentWidth + leftMargin + rightMargin > width) {
-                    if (viewX < 40)
-                        contentX = Math.max(-leftMargin, contentX - 14)
-                    else if (viewX > width - 40)
-                        contentX = Math.min(maxX, contentX + 14)
+            // Card under content x. Uses the cards' real positions: after moves
+            // and inserts ListView may shift all cards (originX), so x can't be
+            // computed as index × card width.
+            function cardAt(contentPos) {
+                var y = cardWidth / 4
+                var i = indexAt(contentPos, y)
+                if (i < 0)
+                    i = indexAt(contentPos - spacing, y)   // in the gap between two cards
+                if (i < 0)
+                    i = indexAt(contentPos + spacing, y)
+                if (i < 0) {                                // before the first / after the last card
+                    var last = itemAtIndex(count - 1)
+                    i = last && contentPos >= last.x ? count - 1 : 0
+                }
+                return i
+            }
+            function updateDrop(viewX) {
+                dragViewX = viewX
+                dragX = contentItem.mapFromItem(blockList, viewX, 0).x
+                dropIndex = Math.max(0, Math.min(count - 1, cardAt(dragX)))
+            }
+            // auto-scroll while the pointer is near an edge, faster closer to it
+            Timer {
+                interval: 16
+                repeat: true
+                running: blockList.dragFrom >= 0
+                         && (blockList.dragViewX < 60 || blockList.dragViewX > blockList.width - 60)
+                onTriggered: {
+                    var v = blockList.dragViewX
+                    var edge = v < 60 ? 60 - v : v - (blockList.width - 60)
+                    var step = Math.min(40, 4 + edge / 2) * (v < 60 ? -1 : 1)
+                    var minX = blockList.originX - blockList.leftMargin
+                    var maxX = blockList.originX + blockList.contentWidth + blockList.rightMargin - blockList.width
+                    if (maxX <= minX)
+                        return
+                    blockList.contentX = Math.max(minX, Math.min(maxX, blockList.contentX + step))
+                    blockList.updateDrop(v)
                 }
             }
             property bool dragGroup: false   // dragging a multi-selection
@@ -556,9 +586,7 @@ Item {
                                     blockList.dragZone = zone
                                     blockList.dragFrom = index
                                 }
-                                var v = mapToItem(blockList, mouse.x, mouse.y)
-                                var c = mapToItem(blockList.contentItem, mouse.x, mouse.y)
-                                blockList.updateDrop(v.x, c.x)
+                                blockList.updateDrop(mapToItem(blockList, mouse.x, mouse.y).x)
                             }
                             onReleased: blockList.endDrag(true)
                             onCanceled: blockList.endDrag(false)
