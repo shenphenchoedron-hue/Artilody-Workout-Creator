@@ -6,11 +6,12 @@ import Artilody.Backend
 AppDialog {
     id: dlg
     signal exportRequested(string kind)
+    signal exportAllRequested(string kind)     // every workout in the list, one file each: zwo | awt | zwift
     signal helpRequested()
 
     title: "Export Workout"
     panelWidth: 900
-    panelHeight: 700
+    panelHeight: 840
 
     readonly property bool rowing: Builder.sport === "rowing"
     readonly property real cardWidth: (panelWidth - 56 - 18) / 2
@@ -170,16 +171,101 @@ AppDialog {
         }
     }
 
+    // --- all workouts at once (e.g. a whole training series) ---------------------
+    Rectangle {
+        id: allCard
+        x: 28
+        y: 446
+        width: dlg.panelWidth - 56
+        height: 124
+        radius: 14
+        color: Theme.card
+        border.width: 1
+        border.color: Theme.cardBorder
+
+        Rectangle {
+            x: 20
+            y: 20
+            width: 52
+            height: 52
+            radius: 14
+            color: Qt.rgba(Theme.success.r, Theme.success.g, Theme.success.b, 0.18)
+            Icon {
+                anchors.centerIn: parent
+                name: "share"
+                size: 28
+                strokeWidth: 2
+                color: Theme.success
+            }
+        }
+        Column {
+            x: 86
+            y: 18
+            width: parent.width - 106
+            spacing: 2
+            Text {
+                text: "Export all workouts  (" + Library.exportAllCount + ")"
+                color: Theme.text
+                font.pixelSize: 21
+                font.weight: Font.Bold
+            }
+            Text {
+                width: parent.width
+                text: Library.filtered
+                      ? "The " + Library.exportAllCount + " workouts shown in the library (search / filter is on) – one file each, into a folder you choose."
+                      : "Every workout in your Workouts folder – one file each, into a folder you choose. Saved changes only."
+                color: Theme.textSecondary
+                font.pixelSize: 15
+                wrapMode: Text.WordWrap
+            }
+        }
+        Row {
+            x: 86
+            anchors.bottom: parent.bottom
+            anchors.bottomMargin: 16
+            spacing: 10
+            AppButton {
+                width: 190
+                height: 44
+                iconName: "export"
+                text: "All as .zwo…"
+                enabled: Library.exportAllCount > 0
+                onClicked: dlg.exportAllRequested("zwo")
+            }
+            AppButton {
+                width: 190
+                height: 44
+                kind: "secondary"
+                iconName: "export"
+                text: "All as .awt…"
+                enabled: Library.exportAllCount > 0
+                onClicked: dlg.exportAllRequested("awt")
+            }
+            AppButton {
+                visible: Library.zwiftFolders.length > 0
+                width: 270
+                height: 44
+                kind: "secondary"
+                bold: false
+                fontSize: 16
+                iconName: "download"
+                text: "Copy all into Zwift's folder"
+                enabled: Library.exportAllCount > 0
+                onClicked: dlg.exportAllRequested("zwift")
+            }
+        }
+    }
+
     Rectangle {
         x: 28
-        y: 450
+        y: 590
         width: dlg.panelWidth - 56
         height: 1
         color: Theme.cardBorder
     }
     UsageNote {
         x: 28
-        y: 470
+        y: 610
         width: dlg.panelWidth - 56
         fontSize: 14
         spacing: 12

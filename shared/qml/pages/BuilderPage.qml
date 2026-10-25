@@ -11,7 +11,18 @@ Item {
     readonly property int selIndex: Builder.selectedIndex
     readonly property bool hasSel: selIndex >= 0 && sel.index !== undefined
     readonly property bool showEndPower: hasSel && (sel.isRamp || sel.type === "ramp" || sel.type === "warmup" || sel.type === "cooldown")
-    property bool percentView: false
+    // All power targets are % of FTP (that is what workouts store, so they
+    // scale with every rider's FTP); watts are only shown as a hint.
+    property bool percentView: true
+
+    // multi-selection (Ctrl/⌘-click, Shift-click, Ctrl/⌘+A)
+    readonly property var selRows: Builder.selection
+    readonly property int selCount: Builder.selectionCount
+    readonly property bool multi: selCount > 1
+    readonly property int selFirst: selCount > 0 ? selRows[0] : -1
+    readonly property int selLast: selCount > 0 ? selRows[selCount - 1] : -1
+    readonly property bool selContiguous: selCount > 0 && selLast - selFirst + 1 === selCount
+    readonly property int selDuration: Builder.selectionDurationSec
     readonly property bool rowing: Builder.sport === "rowing"
     readonly property string ftpLabel: rowing ? "Rowing FTP" : "FTP"
 
@@ -44,7 +55,7 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
         }
         Text {
-            text: "Watts based on your " + page.ftpLabel + ": " + Builder.ftp + " W"
+            text: "Power in % of " + page.ftpLabel + "  ·  your " + page.ftpLabel + ": " + Builder.ftp + " W"
             color: Theme.textSecondary
             font.pixelSize: 17
             anchors.verticalCenter: parent.verticalCenter
@@ -138,7 +149,80 @@ Item {
             return
         Builder.removeBlock(index)
     }
+    // true when index belongs to a selection of several blocks: moving,
+    // duplicating and deleting it then acts on the whole group
+    function inGroup(index) {
+        return page.multi && page.selRows.indexOf(index) >= 0
+    }
+    function canMoveEarlier(index) {
+        return inGroup(index) ? !(page.selContiguous && page.selFirst === 0) : index > 0
+    }
+    function canMoveLater(index) {
+        return inGroup(index) ? !(page.selContiguous && page.selLast === Builder.blockCount - 1)
+                              : index >= 0 && index < Builder.blockCount - 1
+    }
+    function shift(index, delta) {
+        if (inGroup(index)) {
+            Builder.shiftSelection(delta)
+            blockList.positionViewAtIndex(delta < 0 ? page.selFirst : page.selLast, ListView.Contain)
+        } else {
+            page.moveTo(index, index + delta)
+        }
+    }
+    function moveToStart(index) {
+        if (inGroup(index)) {
+            Builder.moveSelection(0)
+            blockList.positionViewAtIndex(0, ListView.Contain)
+        } else {
+            page.moveTo(index, 0)
+        }
+    }
+    function moveToEnd(index) {
+        if (inGroup(index)) {
+            Builder.moveSelection(Builder.blockCount)
+            blockList.positionViewAtIndex(Builder.blockCount - 1, ListView.Contain)
+        } else {
+            page.moveTo(index, Builder.blockCount - 1)
+        }
+    }
+    function duplicate(index) {
+        if (inGroup(index))
+            Builder.duplicateSelection()
+        else
+            Builder.duplicateBlock(index)
+    }
+    function requestDelete(index) {
+        if (inGroup(index))
+            deleteGroupDialog.open()
+        else
+            page.deleteBlock(index)
+    }
+    // click on a block card: plain = select only it, Ctrl/⌘ = toggle, Shift = range
+    function clickBlock(index, modifiers) {
+        if (modifiers & Qt.ShiftModifier)
+            Builder.selectRange(index)
+        else if (modifiers & (Qt.ControlModifier | Qt.MetaModifier))
+            Builder.toggleSelected(index)
+        else
+            Builder.selectedIndex = index
+    }
+    // Applies an edit to the selected block, or to every selected block.
+    // fn(index, block) gets the block's current values (see Builder.block()).
+    // All edits are one batch, so the workout is recomputed once, not per block.
+    function forSelected(fn) {
+        var rows = page.multi ? page.selRows.slice() : [page.selIndex]
+        Builder.beginBatch()
+        try {
+            for (var i = 0; i < rows.length; ++i)
+                fn(rows[i], Builder.block(rows[i]))
+        } finally {
+            Builder.endBatch()
+        }
+    }
     function openBlockMenu(index) {
+        // right-click outside the selection selects that block alone
+        if (page.selRows.indexOf(index) < 0)
+            Builder.selectedIndex = index
         blockMenu.blockIndex = index
         blockMenu.popup()
     }
@@ -160,56 +244,70 @@ Item {
     Shortcut {
         sequences: ["Alt+Left", "Alt+Up"]
         enabled: page.visible && page.hasSel && !page.textFocus
-        onActivated: page.moveTo(page.selIndex, page.selIndex - 1)
+        onActivated: page.shift(page.selIndex, -1)
     }
     Shortcut {
         sequences: ["Alt+Right", "Alt+Down"]
         enabled: page.visible && page.hasSel && !page.textFocus
-        onActivated: page.moveTo(page.selIndex, page.selIndex + 1)
+        onActivated: page.shift(page.selIndex, 1)
+    }
+    Shortcut {
+        sequences: [StandardKey.SelectAll]
+        enabled: page.visible && !page.textFocus && Builder.blockCount > 0
+        onActivated: Builder.selectAll()
     }
 
     AppMenu {
         id: blockMenu
         property int blockIndex: -1
         minWidth: 250
+        readonly property bool group: page.inGroup(blockIndex)
+        readonly property string what: group ? page.selCount + " blocks" : ""
         AppMenuItem {
-            text: "Move earlier"
+            text: blockMenu.group ? "Move " + blockMenu.what + " earlier" : "Move earlier"
             iconName: "chevronLeft"
             hint: page.altKey + "←"
-            enabled: blockMenu.blockIndex > 0
-            onTriggered: page.moveTo(blockMenu.blockIndex, blockMenu.blockIndex - 1)
+            enabled: page.canMoveEarlier(blockMenu.blockIndex)
+            onTriggered: page.shift(blockMenu.blockIndex, -1)
         }
         AppMenuItem {
-            text: "Move later"
+            text: blockMenu.group ? "Move " + blockMenu.what + " later" : "Move later"
             iconName: "chevronRight"
             hint: page.altKey + "→"
-            enabled: blockMenu.blockIndex >= 0 && blockMenu.blockIndex < Builder.blockCount - 1
-            onTriggered: page.moveTo(blockMenu.blockIndex, blockMenu.blockIndex + 1)
+            enabled: page.canMoveLater(blockMenu.blockIndex)
+            onTriggered: page.shift(blockMenu.blockIndex, 1)
         }
         AppMenuItem {
             text: "Move to start"
             iconName: "skipBack"
-            enabled: blockMenu.blockIndex > 0
-            onTriggered: page.moveTo(blockMenu.blockIndex, 0)
+            enabled: page.canMoveEarlier(blockMenu.blockIndex)
+            onTriggered: page.moveToStart(blockMenu.blockIndex)
         }
         AppMenuItem {
             text: "Move to end"
             iconName: "skipForward"
-            enabled: blockMenu.blockIndex >= 0 && blockMenu.blockIndex < Builder.blockCount - 1
-            onTriggered: page.moveTo(blockMenu.blockIndex, Builder.blockCount - 1)
+            enabled: page.canMoveLater(blockMenu.blockIndex)
+            onTriggered: page.moveToEnd(blockMenu.blockIndex)
         }
         AppMenuSeparator {}
         AppMenuItem {
-            text: "Duplicate"
+            text: blockMenu.group ? "Duplicate " + blockMenu.what : "Duplicate"
             iconName: "copy"
-            onTriggered: Builder.duplicateBlock(blockMenu.blockIndex)
+            onTriggered: page.duplicate(blockMenu.blockIndex)
+        }
+        AppMenuItem {
+            text: "Select all blocks"
+            iconName: "check"
+            hint: (Qt.platform.os === "osx" ? "⌘" : "Ctrl+") + "A"
+            enabled: page.selCount < Builder.blockCount
+            onTriggered: Builder.selectAll()
         }
         AppMenuSeparator {}
         AppMenuItem {
-            text: "Delete interval"
+            text: blockMenu.group ? "Delete " + blockMenu.what : "Delete interval"
             iconName: "trash"
             destructive: true
-            onTriggered: page.deleteBlock(blockMenu.blockIndex)
+            onTriggered: page.requestDelete(blockMenu.blockIndex)
         }
     }
 
@@ -275,8 +373,12 @@ Item {
             percentAxis: page.percentView
             ftp: Builder.ftp
             barGaps: false
-            selectionStart: page.hasSel ? Builder.blockStartSec(page.selIndex, Builder.totalDurationSec) : -1
-            selectionEnd: page.hasSel ? Builder.blockStartSec(page.selIndex, Builder.totalDurationSec) + page.sel.duration : -1
+            // a contiguous multi-selection is highlighted as one range
+            readonly property int selA: page.multi && page.selContiguous ? page.selFirst : page.selIndex
+            readonly property int selB: page.multi && page.selContiguous ? page.selLast : page.selIndex
+            selectionStart: page.hasSel ? Builder.blockStartSec(selA, Builder.totalDurationSec) : -1
+            selectionEnd: page.hasSel ? Builder.blockStartSec(selB, Builder.totalDurationSec)
+                                        + (Builder.block(selB, Builder.totalDurationSec).duration || 0) : -1
             onClickedAt: (second) => Builder.selectedIndex = Builder.blockAtSecond(second)
         }
 
@@ -295,10 +397,10 @@ Item {
             Text { text: "Drag the grip or use"; color: reorderHint.tint; font.pixelSize: reorderHint.fontSize; anchors.verticalCenter: parent.verticalCenter }
             Icon { name: "chevronLeft"; size: 16; strokeWidth: 2.2; color: reorderHint.tint; anchors.verticalCenter: parent.verticalCenter }
             Icon { name: "chevronRight"; size: 16; strokeWidth: 2.2; color: reorderHint.tint; anchors.verticalCenter: parent.verticalCenter }
-            Text { text: "to reorder   ·   click a block to edit   ·"; color: reorderHint.tint; font.pixelSize: reorderHint.fontSize; anchors.verticalCenter: parent.verticalCenter }
-            Icon { name: "trash"; size: 16; color: reorderHint.tint; anchors.verticalCenter: parent.verticalCenter }
+            Text { text: "to reorder   ·"; color: reorderHint.tint; font.pixelSize: reorderHint.fontSize; anchors.verticalCenter: parent.verticalCenter }
             Text {
-                text: "to delete   ·   right-click for more   ·   " + page.altKey + "←/→ moves the selected block"
+                text: (Qt.platform.os === "osx" ? "⌘" : "Ctrl+") + "click / Shift+click selects several blocks to move or edit together   ·   "
+                      + page.altKey + "←/→ moves the selection   ·   right-click for more"
                 color: reorderHint.tint
                 font.pixelSize: reorderHint.fontSize
                 anchors.verticalCenter: parent.verticalCenter
@@ -342,25 +444,44 @@ Item {
                         contentX = Math.min(maxX, contentX + 14)
                 }
             }
+            property bool dragGroup: false   // dragging a multi-selection
             function endDrag(commit) {
-                if (commit && dragFrom >= 0 && dropIndex >= 0 && dropIndex !== dragFrom)
-                    page.moveTo(dragFrom, dropIndex)
+                if (commit && dragFrom >= 0 && dropIndex >= 0 && dropIndex !== dragFrom) {
+                    if (dragGroup) {
+                        // drop next to an unselected card: the group goes before it
+                        // (dragging left) or after it (dragging right)
+                        if (page.selRows.indexOf(dropIndex) < 0) {
+                            var before = 0
+                            for (var i = 0; i < page.selCount; ++i)
+                                if (page.selRows[i] < dropIndex)
+                                    ++before
+                            var dest = dropIndex - before + (dropIndex > dragFrom ? 1 : 0)
+                            Builder.moveSelection(dest)
+                            positionViewAtIndex(Math.min(Builder.blockCount - 1, dest), ListView.Contain)
+                        }
+                    } else {
+                        page.moveTo(dragFrom, dropIndex)
+                    }
+                }
                 dragFrom = -1
                 dropIndex = -1
+                dragGroup = false
             }
 
             delegate: Item {
                 id: blockDelegate
                 width: blockList.cardWidth
                 height: 160
-                readonly property bool isSel: index === Builder.selectedIndex
+                readonly property bool isPrimary: index === Builder.selectedIndex
+                readonly property bool isSel: page.selRows.indexOf(index) >= 0
                 readonly property bool dragged: blockList.dragFrom === index
+                                                || (blockList.dragGroup && blockList.dragFrom >= 0 && isSel)
 
                 Rectangle {
                     anchors.fill: parent
                     radius: 10
                     color: blockDelegate.isSel ? Theme.cardStrong : Theme.card
-                    border.width: blockDelegate.dragged ? 2 : blockDelegate.isSel ? 3 : 1
+                    border.width: blockDelegate.dragged ? 2 : blockDelegate.isPrimary ? 3 : blockDelegate.isSel ? 2 : 1
                     border.color: blockDelegate.dragged ? Theme.accentLight
                                 : blockDelegate.isSel ? Theme.accent : Theme.cardBorder
                     opacity: blockDelegate.dragged ? 0.45 : 1
@@ -372,9 +493,10 @@ Item {
                         acceptedButtons: Qt.LeftButton | Qt.RightButton
                         cursorShape: Qt.PointingHandCursor
                         onClicked: (mouse) => {
-                            Builder.selectedIndex = index
                             if (mouse.button === Qt.RightButton)
                                 page.openBlockMenu(index)
+                            else
+                                page.clickBlock(index, mouse.modifiers)
                         }
                     }
 
@@ -417,7 +539,11 @@ Item {
                             property real pressX: 0
                             onPressed: (mouse) => {
                                 pressX = mouse.x
-                                Builder.selectedIndex = index
+                                // grabbing a card of a multi-selection drags the whole group
+                                if (mouse.modifiers & (Qt.ShiftModifier | Qt.ControlModifier | Qt.MetaModifier))
+                                    page.clickBlock(index, mouse.modifiers)
+                                else if (!page.inGroup(index))
+                                    Builder.selectedIndex = index
                             }
                             onPositionChanged: (mouse) => {
                                 if (!pressed)
@@ -425,7 +551,8 @@ Item {
                                 if (blockList.dragFrom < 0) {
                                     if (Math.abs(mouse.x - pressX) < 5)
                                         return
-                                    blockList.dragName = name
+                                    blockList.dragGroup = page.inGroup(index)
+                                    blockList.dragName = blockList.dragGroup ? page.selCount + " blocks" : name
                                     blockList.dragZone = zone
                                     blockList.dragFrom = index
                                 }
@@ -438,7 +565,7 @@ Item {
                         }
                         ToolTip.visible: gripMouse.containsMouse && !gripMouse.pressed
                         ToolTip.delay: 500
-                        ToolTip.text: "Drag to reorder"
+                        ToolTip.text: page.inGroup(index) ? "Drag to move the " + page.selCount + " selected blocks" : "Drag to reorder"
                     }
 
                     Text {
@@ -464,7 +591,7 @@ Item {
                             spacing: 8
                             Icon { name: "bolt"; size: 16; color: zone === 3 ? Theme.warning : Theme.text; anchors.verticalCenter: parent.verticalCenter }
                             Text {
-                                text: isRamp ? watts + "–" + endWatts + " W" : watts + " W"
+                                text: isRamp ? percent + "–" + endPercent + "%" : percent + "%"
                                 color: Theme.text
                                 font.pixelSize: 15
                             }
@@ -478,15 +605,15 @@ Item {
                         spacing: 2
                         IconButton {
                             flat: true; iconName: "chevronLeft"; iconSize: 18
-                            enabled: index > 0
-                            tooltip: "Move earlier (left)"
-                            onClicked: page.moveTo(index, index - 1)
+                            enabled: page.canMoveEarlier(index)
+                            tooltip: page.inGroup(index) ? "Move the " + page.selCount + " selected blocks earlier" : "Move earlier (left)"
+                            onClicked: page.shift(index, -1)
                         }
                         IconButton {
                             flat: true; iconName: "chevronRight"; iconSize: 18
-                            enabled: index < blockList.count - 1
-                            tooltip: "Move later (right)"
-                            onClicked: page.moveTo(index, index + 1)
+                            enabled: page.canMoveLater(index)
+                            tooltip: page.inGroup(index) ? "Move the " + page.selCount + " selected blocks later" : "Move later (right)"
+                            onClicked: page.shift(index, 1)
                         }
                     }
                     Row {
@@ -495,14 +622,23 @@ Item {
                         anchors.bottom: parent.bottom
                         anchors.bottomMargin: 6
                         spacing: 2
-                        IconButton { flat: true; iconName: "copy"; iconSize: 18; tooltip: "Duplicate interval"; onClicked: Builder.duplicateBlock(index) }
-                        IconButton { flat: true; iconName: "trash"; iconSize: 18; iconColor: Theme.danger; tooltip: "Delete interval"; onClicked: page.deleteBlock(index) }
+                        IconButton {
+                            flat: true; iconName: "copy"; iconSize: 18
+                            tooltip: page.inGroup(index) ? "Duplicate the " + page.selCount + " selected blocks" : "Duplicate interval"
+                            onClicked: page.duplicate(index)
+                        }
+                        IconButton {
+                            flat: true; iconName: "trash"; iconSize: 18; iconColor: Theme.danger
+                            tooltip: page.inGroup(index) ? "Delete the " + page.selCount + " selected blocks" : "Delete interval"
+                            onClicked: page.requestDelete(index)
+                        }
                     }
                 }
 
                 // drop indicator: where the dragged card will land
                 Rectangle {
                     visible: blockList.dragFrom >= 0 && blockList.dropIndex === index && !blockDelegate.dragged
+                             && !(blockList.dragGroup && blockDelegate.isSel)
                     width: 4
                     height: parent.height
                     radius: 2
@@ -602,7 +738,7 @@ Item {
                     { type: "intervals", label: "Intervals", bars: [0.5, 0.8, 0.6, 1.0], color: "#ffd21f" },
                     { type: "recovery", label: "Recovery", bars: [0.6, 0.9, 0.6], color: "#45d659" },
                     { type: "cooldown", label: "Cool Down", bars: [0.9, 0.6, 0.4], color: "#3d86fb" },
-                    { type: "ramp", label: "Ramp", bars: [0.4, 0.6, 0.8, 1.0], color: "#ff3b30" }
+                    { type: "ramp", label: "Ramp / Steps", bars: [0.4, 0.6, 0.8, 1.0], color: "#ff3b30" }
                 ]
                 Rectangle {
                     id: addTile
@@ -641,7 +777,14 @@ Item {
                         anchors.fill: parent
                         hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
-                        onClicked: Builder.addBlock(modelData.type)
+                        onClicked: {
+                            if (modelData.type === "intervals")
+                                intervalSetDialog.open()
+                            else if (modelData.type === "ramp")
+                                rampDialog.open()
+                            else
+                                Builder.addBlock(modelData.type)
+                        }
                     }
                 }
             }
@@ -678,34 +821,40 @@ Item {
                 y: -6
                 width: parent.width - 22
                 height: 38
-                text: page.sel.name || ""
+                // several blocks: the name field shows the selection (names stay per block)
+                readOnly: page.multi
+                text: page.multi ? page.selCount + " blocks selected" : (page.sel.name || "")
                 color: Theme.text
                 font.pixelSize: 21
                 font.weight: Font.Bold
                 leftPadding: 4
                 selectByMouse: true
                 background: Rectangle {
-                    color: blockName.activeFocus ? Theme.field : "transparent"
+                    color: blockName.activeFocus && !page.multi ? Theme.field : "transparent"
                     radius: 6
-                    border.width: blockName.activeFocus ? 1 : 0
+                    border.width: blockName.activeFocus && !page.multi ? 1 : 0
                     border.color: Theme.accentLight
                 }
-                onEditingFinished: Builder.setBlockName(page.selIndex, text)
+                onEditingFinished: if (!page.multi) Builder.setBlockName(page.selIndex, text)
             }
             Text {
                 x: 26
                 y: 30
+                width: parent.width - 26
+                elide: Text.ElideRight
                 text: {
+                    if (page.multi)
+                        return "Total " + Theme.clock(page.selDuration) + "  ·  changes apply to all"
                     switch (page.sel.type) {
                     case "warmup": return "Gradually raise the effort"
                     case "cooldown": return "Bring the effort down gently"
                     case "recovery": return page.rowing ? "Easy paddling between efforts" : "Easy spinning between efforts"
-                    case "ramp": return "Steadily increasing power"
+                    case "ramp": return page.sel.endPercent < page.sel.percent ? "Steadily decreasing power" : "Steadily increasing power"
                     case "interval": return "Build sustainable power"
                     default: return "Constant effort"
                     }
                 }
-                color: Theme.textSecondary
+                color: page.multi ? Theme.accentLight : Theme.textSecondary
                 font.pixelSize: 15
             }
 
@@ -714,46 +863,59 @@ Item {
                 width: parent.width
                 spacing: 14
 
+                // With several blocks selected: typed values are set on every
+                // selected block, −/+ change every block by the same step.
                 StepperField {
                     Layout.fillWidth: true
                     iconName: "clock"
                     label: "Duration"
+                    sublabel: page.multi ? "each block" : ""
                     value: Theme.clock(page.sel.duration || 0)
-                    onDecrement: Builder.setDuration(page.selIndex, page.sel.duration - (page.sel.duration > 120 ? 30 : 15))
-                    onIncrement: Builder.setDuration(page.selIndex, page.sel.duration + (page.sel.duration >= 120 ? 30 : 15))
-                    onEdited: (text) => { if (!Builder.setDurationText(page.selIndex, text)) page.message("Use mm:ss, e.g. 12:00") }
+                    onDecrement: page.forSelected(function(i, b) { Builder.setDuration(i, Theme.stepDuration(b.duration, -1)) })
+                    onIncrement: page.forSelected(function(i, b) { Builder.setDuration(i, Theme.stepDuration(b.duration, 1)) })
+                    onEdited: (text) => {
+                        var ok = true
+                        page.forSelected(function(i, b) { ok = Builder.setDurationText(i, text) && ok })
+                        if (!ok)
+                            page.message("Use mm:ss, e.g. 12:00")
+                    }
                 }
                 StepperField {
                     Layout.fillWidth: true
                     iconName: "bolt"
                     iconColor: Theme.warning
-                    label: page.showEndPower ? "Start Power (W)" : "Target Power (W)"
-                    value: page.sel.watts !== undefined ? page.sel.watts : ""
-                    onDecrement: Builder.setWatts(page.selIndex, page.sel.watts - 5)
-                    onIncrement: Builder.setWatts(page.selIndex, page.sel.watts + 5)
-                    onEdited: (text) => { var v = parseInt(text); if (!isNaN(v)) Builder.setWatts(page.selIndex, v) }
+                    label: page.showEndPower ? "Start Power" : "Target Power"
+                    sublabel: page.sel.watts !== undefined ? "≈ " + page.sel.watts + " W" : ""
+                    unit: "% " + page.ftpLabel
+                    value: page.sel.percent !== undefined ? page.sel.percent : ""
+                    onDecrement: page.forSelected(function(i, b) { Builder.setPercent(i, b.percent - 1) })
+                    onIncrement: page.forSelected(function(i, b) { Builder.setPercent(i, b.percent + 1) })
+                    onEdited: (text) => {
+                        var v = parseInt(text)
+                        if (!isNaN(v))
+                            page.forSelected(function(i, b) { Builder.setPercent(i, v) })
+                    }
                 }
                 StepperField {
                     Layout.fillWidth: true
                     visible: page.showEndPower
                     iconName: "trendUp"
                     iconColor: Theme.warning
-                    label: "End Power (W)"
-                    value: page.sel.endWatts !== undefined ? page.sel.endWatts : ""
-                    onDecrement: Builder.setEndWatts(page.selIndex, page.sel.endWatts - 5)
-                    onIncrement: Builder.setEndWatts(page.selIndex, page.sel.endWatts + 5)
-                    onEdited: (text) => { var v = parseInt(text); if (!isNaN(v)) Builder.setEndWatts(page.selIndex, v) }
-                }
-                StepperField {
-                    Layout.fillWidth: true
-                    iconName: "dashboard"
-                    iconColor: Theme.accentLight
-                    label: "% " + page.ftpLabel
-                    unit: "%"
-                    value: page.sel.percent !== undefined ? page.sel.percent : ""
-                    onDecrement: Builder.setPercent(page.selIndex, page.sel.percent - 1)
-                    onIncrement: Builder.setPercent(page.selIndex, page.sel.percent + 1)
-                    onEdited: (text) => { var v = parseInt(text); if (!isNaN(v)) Builder.setPercent(page.selIndex, v) }
+                    label: "End Power"
+                    sublabel: page.sel.endWatts !== undefined ? "≈ " + page.sel.endWatts + " W" : ""
+                    unit: "% " + page.ftpLabel
+                    value: page.sel.endPercent !== undefined ? page.sel.endPercent : ""
+                    // only ramps (and warm ups / cool downs) of a multi-selection have an end power
+                    function rampLike(b) {
+                        return b.isRamp || b.type === "ramp" || b.type === "warmup" || b.type === "cooldown"
+                    }
+                    onDecrement: page.forSelected(function(i, b) { if (rampLike(b)) Builder.setEndPercent(i, b.endPercent - 1) })
+                    onIncrement: page.forSelected(function(i, b) { if (rampLike(b)) Builder.setEndPercent(i, b.endPercent + 1) })
+                    onEdited: (text) => {
+                        var v = parseInt(text)
+                        if (!isNaN(v))
+                            page.forSelected(function(i, b) { if (rampLike(b)) Builder.setEndPercent(i, v) })
+                    }
                 }
                 StepperField {
                     Layout.fillWidth: true
@@ -761,9 +923,12 @@ Item {
                     label: page.rowing ? "Stroke Rate (SPM)" : "Cadence (RPM)"
                     unit: page.rowing ? "SPM" : "RPM"
                     value: page.sel.cadence > 0 ? page.sel.cadence : "–"
-                    onDecrement: Builder.setCadence(page.selIndex, page.sel.cadence > (page.rowing ? 16 : 40) ? page.sel.cadence - 1 : 0)
-                    onIncrement: Builder.setCadence(page.selIndex, page.sel.cadence > 0 ? page.sel.cadence + 1 : (page.rowing ? 22 : Profiles.preferredCadence))
-                    onEdited: (text) => { var v = parseInt(text); Builder.setCadence(page.selIndex, isNaN(v) ? 0 : v) }
+                    onDecrement: page.forSelected(function(i, b) { Builder.setCadence(i, b.cadence > (page.rowing ? 16 : 40) ? b.cadence - 1 : 0) })
+                    onIncrement: page.forSelected(function(i, b) { Builder.setCadence(i, b.cadence > 0 ? b.cadence + 1 : (page.rowing ? 22 : Profiles.preferredCadence)) })
+                    onEdited: (text) => {
+                        var v = parseInt(text)
+                        page.forSelected(function(i, b) { Builder.setCadence(i, isNaN(v) ? 0 : v) })
+                    }
                 }
                 RowLayout {
                     Layout.fillWidth: true
@@ -783,7 +948,7 @@ Item {
                                                        : "Auto · RPE " + Theme.rpeLabels[page.sel.zone || 0]
                         accentColor: Theme.zoneColor(page.sel.zone || 0)
                         fontSize: 16
-                        onActivated: (index) => Builder.setRpe(page.selIndex, index - 1)
+                        onActivated: (index) => page.forSelected(function(i, b) { Builder.setRpe(i, index - 1) })
                     }
                 }
             }
@@ -917,5 +1082,23 @@ Item {
                 }
             }
         }
+    }
+
+    // --- add ramp / interval set, delete a multi-selection -----------------------
+    RampDialog {
+        id: rampDialog
+        onMessage: (text) => page.message(text)
+    }
+    IntervalSetDialog {
+        id: intervalSetDialog
+        onMessage: (text) => page.message(text)
+    }
+    ConfirmDialog {
+        id: deleteGroupDialog
+        title: "Delete " + page.selCount + " blocks?"
+        message: "The " + page.selCount + " selected blocks (" + Theme.clock(page.selDuration) + ") are removed from the workout."
+        acceptText: "Delete"
+        acceptKind: "danger"
+        onAccepted: Builder.removeSelection()
     }
 }

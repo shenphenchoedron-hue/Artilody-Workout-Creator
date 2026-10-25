@@ -17,6 +17,7 @@
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QtTest>
+#include <cmath>
 #include <memory>
 
 using namespace awc;
@@ -298,6 +299,141 @@ private slots:
         QVERIFY(env.library->openFile(multi));
         QCOMPARE(env.library->totalCount(), 7);
         QCOMPARE(env.builder->name(), demo::workouts().at(0).name);
+    }
+
+    void exportAllWritesEveryShownWorkout()
+    {
+        Env env;
+        QCOMPARE(demo::seedFolder(env.folder), 8);
+        env.library->refresh();
+        QCOMPARE(env.library->exportAllCount(), 8);
+        QVERIFY(!env.library->filtered());
+
+        QTemporaryDir out;
+        const QString zwoDir = out.filePath(QStringLiteral("zwift series"));   // created on demand
+        QCOMPARE(env.library->exportAll(zwoDir, QStringLiteral("zwo")), 8);
+        const QFileInfoList zwos = QDir(zwoDir).entryInfoList({ QStringLiteral("*.zwo") }, QDir::Files);
+        QCOMPARE(zwos.size(), 8);
+        for (const QFileInfo &fi : zwos)
+            QVERIFY2(io::parseFile(fi.absoluteFilePath()).ok(), qPrintable(fi.fileName()));
+
+        // .awt export is identical to the files in the folder (and re-exporting replaces them)
+        QCOMPARE(env.library->exportAll(QUrl::fromLocalFile(out.path()).toString(), QStringLiteral("awt")), 8);
+        QCOMPARE(env.library->exportAll(out.path(), QStringLiteral("awt")), 8);
+        QCOMPARE(QDir(out.path()).entryList({ QStringLiteral("*.awt") }, QDir::Files).size(), 8);
+        for (const auto &e : env.library->entries()) {
+            const QString exported = QDir(out.path()).filePath(io::safeFileName(e.workout.name) + QStringLiteral(".awt"));
+            compareWorkouts(io::parseFile(exported).workouts.constFirst(), e.workout);
+        }
+
+        // never into the Workouts folder itself (or a folder inside it)
+        const QByteArray before = readAll(env.library->entries().constFirst().path);
+        QCOMPARE(env.library->exportAll(env.folder, QStringLiteral("awt")), 0);
+        QCOMPARE(env.library->exportAll(QDir(env.folder).filePath(QStringLiteral("sub")), QStringLiteral("zwo")), 0);
+        QVERIFY(!QDir(env.folder).exists(QStringLiteral("sub")));
+        QVERIFY(!env.library->lastError().isEmpty());
+        QCOMPARE(readAll(env.library->entries().constFirst().path), before);
+        env.library->refresh();
+        QCOMPARE(env.library->totalCount(), 8);
+
+        // only the workouts shown in the list
+        env.library->setSportFilter(QStringLiteral("rowing"));
+        QVERIFY(env.library->filtered());
+        const int rowing = env.library->exportAllCount();
+        QVERIFY(rowing > 0 && rowing < 8);
+        QTemporaryDir out2;
+        QCOMPARE(env.library->exportAll(out2.path(), QStringLiteral("awt")), rowing);
+    }
+
+    void builderGeneratesStepsAndIntervalSets()
+    {
+        Env env;
+        WorkoutBuilder &b = *env.builder;   // warm up, sweet spot, cool down
+        b.setSelectedIndex(1);
+
+        // 5 × 30 s @ 120 % + 1 min @ 55 %, inserted after the selection, all selected
+        b.addIntervalSet(5, 30, 120, 60, 55, true);
+        QCOMPARE(b.blockCount(), 13);
+        QCOMPARE(b.selectionCount(), 10);
+        QCOMPARE(b.selectedRows().constFirst(), 2);
+        const auto &items = b.intervals()->intervals();
+        QCOMPARE(items.at(2).durationSec, 30);
+        QCOMPARE(items.at(2).startPercent, 1.20);
+        QCOMPARE(items.at(3).durationSec, 60);
+        QCOMPARE(items.at(3).endPercent, 0.55);
+        QCOMPARE(items.at(11).type, BlockType::Recovery);
+        b.addIntervalSet(3, 60, 110, 60, 50, false);   // no recovery after the last interval
+        QCOMPARE(b.blockCount(), 18);
+
+        // falling staircase 100 → 60 % in 5 steps of 2 min
+        b.setSelectedIndex(0);
+        b.addSteps(5, 120, 100, 60);
+        QCOMPARE(b.selectionCount(), 5);
+        QList<int> percents;
+        for (int r : b.selectedRows()) {
+            QCOMPARE(b.intervals()->intervals().at(r).durationSec, 120);
+            percents << int(std::lround(b.intervals()->intervals().at(r).startPercent * 100));
+        }
+        QCOMPARE(percents, QList<int>({ 100, 90, 80, 70, 60 }));
+
+        b.addRamp(300, 80, 40);
+        QVERIFY(b.intervals()->intervals().at(b.selectedIndex()).isRamp());
+        b.setEndPercent(b.selectedIndex(), 30);
+        QCOMPARE(b.intervals()->intervals().at(b.selectedIndex()).endPercent, 0.30);
+
+        // still a plain workout: saves and re-imports unchanged
+        QVERIFY(b.save() >= 0);
+        compareWorkouts(io::parseFile(env.library->currentPath()).workouts.constFirst(), b.currentWorkout());
+    }
+
+    void builderMovesSelectionAsAGroup()
+    {
+        Env env;
+        WorkoutBuilder &b = *env.builder;
+        auto names = [&] {
+            QStringList l;
+            for (const auto &i : b.intervals()->intervals())
+                l << i.name;
+            return l;
+        };
+        for (int k = 0; k < 3; ++k)
+            b.addBlock(QStringLiteral("steady"));
+        for (int r = 0; r < b.blockCount(); ++r)
+            b.setBlockName(r, QStringLiteral("B%1").arg(r));
+        QCOMPARE(names(), QStringList({ "B0", "B1", "B2", "B3", "B4", "B5" }));
+
+        b.setSelectedIndex(1);
+        b.selectRange(2);                 // B1, B2
+        QCOMPARE(b.selectionCount(), 2);
+        b.shiftSelection(1);
+        QCOMPARE(names(), QStringList({ "B0", "B3", "B1", "B2", "B4", "B5" }));
+        QCOMPARE(b.selectedRows(), QVector<int>({ 2, 3 }));
+        b.moveSelection(b.blockCount());  // to the end (clamped)
+        QCOMPARE(names(), QStringList({ "B0", "B3", "B4", "B5", "B1", "B2" }));
+        b.shiftSelection(1);              // already at the end: no change
+        QCOMPARE(names(), QStringList({ "B0", "B3", "B4", "B5", "B1", "B2" }));
+
+        // non-contiguous selection becomes one group
+        b.setSelectedIndex(0);
+        b.toggleSelected(3);              // B0, B5
+        QCOMPARE(b.selectedIndex(), 3);
+        b.moveSelection(1);
+        QCOMPARE(names(), QStringList({ "B3", "B0", "B5", "B4", "B1", "B2" }));
+        QCOMPARE(b.selectedRows(), QVector<int>({ 1, 2 }));
+        QCOMPARE(b.selectedIndex(), 2);   // the primary block followed its block
+
+        b.duplicateSelection();
+        QCOMPARE(names(), QStringList({ "B3", "B0", "B5", "B0", "B5", "B4", "B1", "B2" }));
+        QCOMPARE(b.selectedRows(), QVector<int>({ 3, 4 }));
+        b.removeSelection();
+        QCOMPARE(names(), QStringList({ "B3", "B0", "B5", "B4", "B1", "B2" }));
+        QCOMPARE(b.selectionCount(), 1);
+
+        b.selectAll();
+        QCOMPARE(b.selectionCount(), 6);
+        b.setSelectedIndex(2);            // a plain click collapses the selection
+        QCOMPARE(b.selectionCount(), 1);
+        QVERIFY(b.dirty());
     }
 
     void settingsPersist()

@@ -71,6 +71,19 @@ ApplicationWindow {
         exportFileDialog.selectedFile = Library.suggestedExportUrl(kind)
         exportFileDialog.open()
     }
+    // "Export all" (kind zwo | awt | zwift): reads the saved files, so unsaved
+    // edits of the open workout are saved (or discarded) first
+    function exportAll(kind) {
+        guard(function() {
+            if (kind === "zwift") {
+                if (Library.zwiftFolders.length > 0 && Library.exportAllToZwift(Library.zwiftFolders[0]) > 0)
+                    exportDialog.close()
+                return
+            }
+            exportAllDialog.kind = kind
+            exportAllDialog.open()
+        })
+    }
     function changeFolder() {
         folderDialog.currentFolder = Library.folderUrl()
         folderDialog.open()
@@ -104,6 +117,7 @@ ApplicationWindow {
     Shortcut { sequences: [StandardKey.Save]; enabled: !window.anyDialogOpen; onActivated: window.saveCurrent() }
     Shortcut { sequence: "Ctrl+Shift+S"; enabled: !window.anyDialogOpen; onActivated: window.saveAsDialog() }
     Shortcut { sequence: "Ctrl+E"; enabled: !window.anyDialogOpen; onActivated: exportDialog.open() }
+    Shortcut { sequence: "Ctrl+Shift+E"; enabled: !window.anyDialogOpen && Library.exportAllCount > 0; onActivated: exportDialog.open() }
     Shortcut { sequence: "Ctrl+I"; enabled: !window.anyDialogOpen; onActivated: importDialog.open() }
     Shortcut { sequence: "Ctrl+F"; enabled: !window.anyDialogOpen; onActivated: library.focusSearch() }
     Shortcut { sequence: "Ctrl+,"; enabled: !window.anyDialogOpen; onActivated: settingsDialog.open() }
@@ -202,6 +216,7 @@ ApplicationWindow {
                 onSaveRequested: window.saveCurrent()
                 onSaveAsRequested: window.saveAsDialog()
                 onExportRequested: exportDialog.open()
+                onExportAllRequested: exportDialog.open()
                 onImportRequested: importDialog.open()
                 onSettingsRequested: settingsDialog.open()
                 onHelpRequested: helpDialog.open()
@@ -212,6 +227,7 @@ ApplicationWindow {
         ExportDialog {
             id: exportDialog
             onExportRequested: (kind) => window.exportFile(kind)
+            onExportAllRequested: (kind) => window.exportAll(kind)
             onHelpRequested: { exportDialog.close(); helpDialog.open() }
         }
         CreatorSettingsDialog {
@@ -295,6 +311,16 @@ ApplicationWindow {
             else
                 Library.exportAwt(selectedFile)
             exportDialog.close()
+        }
+    }
+    FolderDialog {
+        id: exportAllDialog
+        property string kind: "zwo"
+        title: kind === "zwo" ? "Export all workouts for Zwift (.zwo) into folder"
+                              : "Export all workouts (.awt) into folder"
+        onAccepted: {
+            if (Library.exportAll(selectedFolder, kind) > 0)
+                exportDialog.close()
         }
     }
     FolderDialog {

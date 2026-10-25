@@ -10,7 +10,7 @@
 cmake_minimum_required(VERSION 3.21)
 
 project(ArtilodyWorkoutCreator
-    VERSION 1.0.0
+    VERSION 1.1.0
     DESCRIPTION "Create Artilody Watts Trainer / Zwift workouts on any computer"
     LANGUAGES CXX)
 
@@ -90,9 +90,12 @@ set(SHARED_QML_FILES
     ${WATT_QML}/components/ZoneLegend.qml
     ${WATT_QML}/components/WorkoutChart.qml
     ${WATT_QML}/components/SegmentedControl.qml
+    ${WATT_QML}/components/BlockPreview.qml
     ${WATT_QML}/components/AppDialog.qml
     ${WATT_QML}/components/Toast.qml
     ${WATT_QML}/dialogs/ConfirmDialog.qml
+    ${WATT_QML}/dialogs/RampDialog.qml
+    ${WATT_QML}/dialogs/IntervalSetDialog.qml
     ${WATT_QML}/pages/BuilderPage.qml
 )
 # Creator specific.

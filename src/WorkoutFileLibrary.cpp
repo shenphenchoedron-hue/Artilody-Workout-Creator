@@ -10,6 +10,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QProcess>
+#include <QSet>
 #include <QStandardPaths>
 #include <QUrl>
 #include <QVariantMap>
@@ -631,6 +632,104 @@ bool WorkoutFileLibrary::exportToZwift(const QString &zwiftFolder)
     const bool ok = exportZwo(path);
     m_lastExportDir = last;   // not a place the user picked
     return ok;
+}
+
+int WorkoutFileLibrary::exportAllCount() const
+{
+    int n = 0;
+    for (int i : m_view)
+        if (m_entries.at(i).error.isEmpty())
+            n += std::max(1, m_entries.at(i).workoutCount);
+    return n;
+}
+
+bool WorkoutFileLibrary::filtered() const
+{
+    return !m_filterText.trimmed().isEmpty() || m_sportFilter != QLatin1String("all");
+}
+
+int WorkoutFileLibrary::exportAll(const QString &folderOrUrl, const QString &format)
+{
+    const QString dir = cleanAbs(toLocalPath(folderOrUrl));
+    const bool zwo = format.compare(QLatin1String("zwo"), Qt::CaseInsensitive) == 0;
+    const QString ext = zwo ? QStringLiteral("zwo") : QStringLiteral("awt");
+    // Exported files are named after the workouts and replace files of the
+    // same name: inside the Workouts folder that could overwrite library files.
+    auto real = [](const QString &p) {
+        const QString canonical = QFileInfo(p).canonicalFilePath();
+        return canonical.isEmpty() ? p : canonical;
+    };
+    if (!dir.isEmpty() && !m_folder.isEmpty()) {
+        const QString target = real(dir);
+        const QString library = real(m_folder);
+        if (target.compare(library, Qt::CaseInsensitive) == 0
+            || target.startsWith(library + QLatin1Char('/'), Qt::CaseInsensitive)) {
+            setError(QStringLiteral("Choose a folder outside your Workouts folder – exporting there could overwrite your workouts"));
+            emit message(m_lastError);
+            return 0;
+        }
+    }
+    if (dir.isEmpty() || !QDir().mkpath(dir)) {
+        setError(QStringLiteral("Could not create the folder %1").arg(nativePath(dir)));
+        emit message(m_lastError);
+        return 0;
+    }
+    int written = 0;
+    int rowing = 0;
+    QStringList problems;
+    QSet<QString> used;   // file names written by this export (case-insensitive)
+    for (int i : std::as_const(m_view)) {
+        const Entry &e = m_entries.at(i);
+        if (!e.error.isEmpty())
+            continue;
+        QString err;
+        const QVector<Workout> ws = readFile(e.path, &err);
+        if (ws.isEmpty()) {
+            problems << QStringLiteral("%1: %2").arg(e.fileName, err);
+            continue;
+        }
+        for (const Workout &w : ws) {
+            // two workouts with the same name must not overwrite each other
+            const QString base = io::safeFileName(w.name);
+            QString name = base;
+            for (int n = 2; used.contains(name.toLower()); ++n)
+                name = QStringLiteral("%1 %2").arg(base).arg(n);
+            used.insert(name.toLower());
+            const QString target = QDir(dir).filePath(name + QLatin1Char('.') + ext);
+            QString writeErr;
+            const QByteArray data = zwo ? io::toZwo(w, appName()) : awtBytes(w);
+            if (io::writeFile(target, data, &writeErr)) {
+                ++written;
+                if (w.isRowing())
+                    ++rowing;
+            } else {
+                problems << QStringLiteral("%1: %2").arg(name, writeErr);
+            }
+        }
+    }
+    QString msg = written == 1 ? QStringLiteral("Exported 1 workout to %1").arg(nativePath(dir))
+                               : QStringLiteral("Exported %1 workouts to %2").arg(written).arg(nativePath(dir));
+    if (zwo && rowing > 0)
+        msg += QStringLiteral(" (rowing workouts as bike workouts – Zwift has no rowing)");
+    if (!problems.isEmpty()) {
+        setError(problems.constFirst());
+        msg += QStringLiteral(" – ") + problems.mid(0, 2).join(QStringLiteral("; "))
+               + (problems.size() > 2 ? QStringLiteral(" …") : QString());
+    } else {
+        setError(QString());
+    }
+    emit message(msg);
+    return written;
+}
+
+int WorkoutFileLibrary::exportAllToZwift(const QString &zwiftFolder)
+{
+    const QString dir = toLocalPath(zwiftFolder);
+    if (dir.isEmpty() || !QDir(dir).exists()) {
+        emit message(QStringLiteral("Zwift workouts folder not found"));
+        return 0;
+    }
+    return exportAll(dir, QStringLiteral("zwo"));   // not remembered as an export location
 }
 
 void WorkoutFileLibrary::rememberExportDir(const QString &path)

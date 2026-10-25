@@ -28,12 +28,19 @@ laptop and take the workouts to your training computer or to Zwift.
 
 ## Features
 
-- **The Artilody Workout Builder** – Warm Up, Steady, Intervals (work/recovery repeats), Recovery, Cool Down and
-  **Ramp** blocks. Set duration, target power in **watts or % FTP**, ramps (start → end power), cadence (rowing:
-  stroke rate in SPM) and RPE for every block.
+- **The Artilody Workout Builder** – Warm Up, Steady, Intervals, Recovery, Cool Down and Ramp blocks. Set
+  duration, power in **% of FTP** (so the workout scales to every rider's FTP; watts are shown as a hint), ramps
+  (start → end power), cadence (rowing: stroke rate in SPM) and RPE for every block.
+- **Interval sets** – *Intervals* asks for the number of repeats, interval time and % FTP and recovery time and
+  % FTP, e.g. 5 × 30 s @ 120 % with 1 min recovery @ 55 %.
+- **Ramps and staircases** – *Ramp / Steps* builds a rising or falling staircase (number of steps, time per step,
+  first and last step in % FTP) or one smooth ramp; every step stays editable on its own.
 - **Easy reordering** – drag a block by its ⋮⋮ grip strip (with a drop indicator and auto-scroll), use the
   **‹ ›** buttons on each card, the **right-click menu** (*Move earlier / later / to start / to end, Duplicate,
   Delete interval*) or <kbd>Alt</kbd>/<kbd>⌥</kbd> + <kbd>←</kbd>/<kbd>→</kbd>.
+- **Several blocks at once** – <kbd>Ctrl</kbd>/<kbd>⌘</kbd>-click, <kbd>Shift</kbd>-click or
+  <kbd>Ctrl</kbd>/<kbd>⌘</kbd>+<kbd>A</kbd> selects several blocks to move, duplicate or delete together; changes
+  in *Interval Settings* then apply to all of them.
 - **Cycling and rowing** – a *Cycling / Rowing* switch stores the sport with the workout; rowing workouts are
   % of your rowing FTP.
 - **FTP preview** – enter your cycling FTP, rowing FTP and default cadence to see real watts while you edit. The
@@ -44,7 +51,9 @@ laptop and take the workouts to your training computer or to Zwift.
   refreshes automatically when files change.
 - **Import & export** – open/import `.awt` and Zwift `.zwo` files (multi-workout files are split), export `.awt`
   or `.zwo` anywhere (e.g. a USB stick), and **Copy into Zwift's workouts folder** with one click when Zwift is
-  installed. *Duplicate*, *Rename*, *Delete* (to the trash) and *Show in Finder / Explorer* are built in.
+  installed. **Export all** writes every workout (or the ones matching your search / filter) in one go – one
+  `.zwo` or `.awt` file each – e.g. a whole training series. *Duplicate*, *Rename*, *Delete* (to the trash) and
+  *Show in Finder / Explorer* are built in.
 - **Unsaved-changes protection** – the title and list mark edited workouts, and closing the app, opening another
   workout or starting a new one asks *Save / Don't Save / Cancel*.
 - **Dark and light theme**, keyboard shortcuts, native file dialogs and high-DPI rendering.
@@ -67,21 +76,23 @@ laptop and take the workouts to your training computer or to Zwift.
 | Import | <kbd>Ctrl</kbd>+<kbd>I</kbd> | <kbd>⌘</kbd><kbd>I</kbd> |
 | Search workouts | <kbd>Ctrl</kbd>+<kbd>F</kbd> | <kbd>⌘</kbd><kbd>F</kbd> |
 | Settings | <kbd>Ctrl</kbd>+<kbd>,</kbd> | <kbd>⌘</kbd><kbd>,</kbd> |
-| Move selected block earlier / later | <kbd>Alt</kbd>+<kbd>←</kbd> / <kbd>→</kbd> | <kbd>⌥</kbd><kbd>←</kbd> / <kbd>→</kbd> |
+| Export all workouts | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>E</kbd> | <kbd>⇧</kbd><kbd>⌘</kbd><kbd>E</kbd> |
+| Select all blocks | <kbd>Ctrl</kbd>+<kbd>A</kbd> | <kbd>⌘</kbd><kbd>A</kbd> |
+| Move selected block(s) earlier / later | <kbd>Alt</kbd>+<kbd>←</kbd> / <kbd>→</kbd> | <kbd>⌥</kbd><kbd>←</kbd> / <kbd>→</kbd> |
 
 ## Download
 
-Version **1.0.0** – all files are on the [release page](https://github.com/shenphenchoedron-hue/Artilody-Workout-Creator/releases/latest).
+Version **1.1.0** – all files are on the [release page](https://github.com/shenphenchoedron-hue/Artilody-Workout-Creator/releases/latest).
 
 | Platform | Download |
 |---|---|
-| **Windows 10/11** (64-bit) – installer | [ArtilodyWorkoutCreator-1.0.0-windows-x64-setup.exe](https://github.com/shenphenchoedron-hue/Artilody-Workout-Creator/releases/download/v1.0.0/ArtilodyWorkoutCreator-1.0.0-windows-x64-setup.exe) |
-| **Windows 10/11** (64-bit) – portable ZIP | [ArtilodyWorkoutCreator-1.0.0-windows-x64.zip](https://github.com/shenphenchoedron-hue/Artilody-Workout-Creator/releases/download/v1.0.0/ArtilodyWorkoutCreator-1.0.0-windows-x64.zip) |
-| **macOS 12+** (Apple Silicon & Intel, universal) | [ArtilodyWorkoutCreator-1.0.0-macOS-universal.dmg](https://github.com/shenphenchoedron-hue/Artilody-Workout-Creator/releases/download/v1.0.0/ArtilodyWorkoutCreator-1.0.0-macOS-universal.dmg) |
-| **Debian 12** Bookworm (amd64) | [artilody-workout-creator_1.0.0_debian12_amd64.deb](https://github.com/shenphenchoedron-hue/Artilody-Workout-Creator/releases/download/v1.0.0/artilody-workout-creator_1.0.0_debian12_amd64.deb) |
-| **Ubuntu 24.04** LTS (amd64) | [artilody-workout-creator_1.0.0_ubuntu24.04_amd64.deb](https://github.com/shenphenchoedron-hue/Artilody-Workout-Creator/releases/download/v1.0.0/artilody-workout-creator_1.0.0_ubuntu24.04_amd64.deb) |
-| **Raspberry Pi OS** 64-bit Bookworm (arm64, Pi 3/4/5/400) | [artilody-workout-creator_1.0.0_raspberrypi-os-bookworm_arm64.deb](https://github.com/shenphenchoedron-hue/Artilody-Workout-Creator/releases/download/v1.0.0/artilody-workout-creator_1.0.0_raspberrypi-os-bookworm_arm64.deb) |
-| Checksums | [SHA256SUMS.txt](https://github.com/shenphenchoedron-hue/Artilody-Workout-Creator/releases/download/v1.0.0/SHA256SUMS.txt) |
+| **Windows 10/11** (64-bit) – installer | [ArtilodyWorkoutCreator-1.1.0-windows-x64-setup.exe](https://github.com/shenphenchoedron-hue/Artilody-Workout-Creator/releases/download/v1.1.0/ArtilodyWorkoutCreator-1.1.0-windows-x64-setup.exe) |
+| **Windows 10/11** (64-bit) – portable ZIP | [ArtilodyWorkoutCreator-1.1.0-windows-x64.zip](https://github.com/shenphenchoedron-hue/Artilody-Workout-Creator/releases/download/v1.1.0/ArtilodyWorkoutCreator-1.1.0-windows-x64.zip) |
+| **macOS 12+** (Apple Silicon & Intel, universal) | [ArtilodyWorkoutCreator-1.1.0-macOS-universal.dmg](https://github.com/shenphenchoedron-hue/Artilody-Workout-Creator/releases/download/v1.1.0/ArtilodyWorkoutCreator-1.1.0-macOS-universal.dmg) |
+| **Debian 12** Bookworm (amd64) | [artilody-workout-creator_1.1.0_debian12_amd64.deb](https://github.com/shenphenchoedron-hue/Artilody-Workout-Creator/releases/download/v1.1.0/artilody-workout-creator_1.1.0_debian12_amd64.deb) |
+| **Ubuntu 24.04** LTS (amd64) | [artilody-workout-creator_1.1.0_ubuntu24.04_amd64.deb](https://github.com/shenphenchoedron-hue/Artilody-Workout-Creator/releases/download/v1.1.0/artilody-workout-creator_1.1.0_ubuntu24.04_amd64.deb) |
+| **Raspberry Pi OS** 64-bit Bookworm (arm64, Pi 3/4/5/400) | [artilody-workout-creator_1.1.0_raspberrypi-os-bookworm_arm64.deb](https://github.com/shenphenchoedron-hue/Artilody-Workout-Creator/releases/download/v1.1.0/artilody-workout-creator_1.1.0_raspberrypi-os-bookworm_arm64.deb) |
+| Checksums | [SHA256SUMS.txt](https://github.com/shenphenchoedron-hue/Artilody-Workout-Creator/releases/download/v1.1.0/SHA256SUMS.txt) |
 
 ### Installation
 
@@ -101,9 +112,9 @@ xattr -cr "/Applications/Artilody Workout Creator.app"
 libraries):
 
 ```sh
-sudo apt install ./artilody-workout-creator_1.0.0_debian12_amd64.deb                # Debian 12
-sudo apt install ./artilody-workout-creator_1.0.0_ubuntu24.04_amd64.deb             # Ubuntu 24.04
-sudo apt install ./artilody-workout-creator_1.0.0_raspberrypi-os-bookworm_arm64.deb # Raspberry Pi OS 64-bit
+sudo apt install ./artilody-workout-creator_1.1.0_debian12_amd64.deb                # Debian 12
+sudo apt install ./artilody-workout-creator_1.1.0_ubuntu24.04_amd64.deb             # Ubuntu 24.04
+sudo apt install ./artilody-workout-creator_1.1.0_raspberrypi-os-bookworm_arm64.deb # Raspberry Pi OS 64-bit
 ```
 
 Start it from the application menu or run `artilody-workout-creator`. Uninstall with
@@ -218,7 +229,7 @@ is built inside the Artilody Watts Trainer repository (`Artilody Workout Creator
 | Shared (from Artilody Watts Trainer, `shared/`) | Creator only |
 |---|---|
 | `src/core`: `Workout`, `Interval`, `Zones`, `TimeFormat`, `WorkoutIO`, `WorkoutBuilder`, `BuilderBackend.h` | `src/`: `WorkoutFileLibrary`, `CreatorBackend`, `CreatorSettings`, `DemoWorkouts`, `main.cpp` |
-| `qml`: `Theme.qml`, `pages/BuilderPage.qml`, `dialogs/ConfirmDialog.qml`, 21 `components/` | `qml/`: `Main`, `LibraryPanel`, `LibraryItem`, `CreatorTopBar`, `ExportDialog`, `CreatorSettingsDialog`, `RenameDialog`, `HelpDialog`, `UsageNote` |
+| `qml`: `Theme.qml`, `pages/BuilderPage.qml`, `dialogs/ConfirmDialog.qml`, `dialogs/RampDialog.qml`, `dialogs/IntervalSetDialog.qml`, 22 `components/` | `qml/`: `Main`, `LibraryPanel`, `LibraryItem`, `CreatorTopBar`, `ExportDialog`, `CreatorSettingsDialog`, `RenameDialog`, `HelpDialog`, `UsageNote` |
 
 ## License
 

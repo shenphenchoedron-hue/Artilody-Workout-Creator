@@ -62,6 +62,12 @@ class WorkoutBuilder : public QObject
     Q_PROPERTY(IntervalModel *intervals READ intervals CONSTANT)
     Q_PROPERTY(int selectedIndex READ selectedIndex WRITE setSelectedIndex NOTIFY selectedChanged)
     Q_PROPERTY(QVariantMap selected READ selected NOTIFY selectedChanged)
+    // Multi-selection (Ctrl/⌘-click, Shift-click, select all). selectedIndex
+    // is the "primary" block shown in Interval Settings; selection lists all
+    // selected rows in ascending order and always contains selectedIndex.
+    Q_PROPERTY(QVariantList selection READ selection NOTIFY selectedChanged)
+    Q_PROPERTY(int selectionCount READ selectionCount NOTIFY selectedChanged)
+    Q_PROPERTY(int selectionDurationSec READ selectionDurationSec NOTIFY selectionDurationChanged)
     Q_PROPERTY(int totalDurationSec READ totalDurationSec NOTIFY contentChanged)
     Q_PROPERTY(int blockCount READ blockCount NOTIFY contentChanged)
     Q_PROPERTY(QVariantList segments READ segments NOTIFY contentChanged)
@@ -96,6 +102,10 @@ public:
     int selectedIndex() const { return m_selected; }
     void setSelectedIndex(int index);
     QVariantMap selected() const;
+    QVariantList selection() const;
+    int selectionCount() const { return int(m_selection.size()); }
+    int selectionDurationSec() const;
+    const QVector<int> &selectedRows() const { return m_selection; }
     int totalDurationSec() const;
     int blockCount() const { return m_model.rowCount(); }
     QVariantList segments() const;
@@ -123,10 +133,41 @@ public:
     Q_INVOKABLE void setDuration(int index, int seconds);
     Q_INVOKABLE bool setDurationText(int index, const QString &text);
     Q_INVOKABLE void setWatts(int index, int watts);          // start power (and end for non-ramps)
-    Q_INVOKABLE void setEndWatts(int index, int watts);       // makes the block a ramp
-    Q_INVOKABLE void setPercent(int index, int percent);      // % FTP
+    Q_INVOKABLE void setPercent(int index, int percent);      // % FTP (start; end too for non-ramps)
+    Q_INVOKABLE void setEndPercent(int index, int percent);   // % FTP, makes the block a ramp
     Q_INVOKABLE void setCadence(int index, int rpm);
     Q_INVOKABLE void setRpe(int index, int zone);             // -1 = auto
+
+    // Generated block groups, inserted after the selection. The new blocks
+    // are plain blocks (so .awt / .zwo files stay compatible) and are all
+    // selected afterwards, so they can be moved or edited together.
+    // Smooth ramp: one block going linearly from start to end.
+    Q_INVOKABLE void addRamp(int durationSec, int startPercent, int endPercent);
+    // Staircase: count steady steps of stepSec each, evenly from startPercent
+    // to endPercent (end < start = descending staircase).
+    Q_INVOKABLE void addSteps(int count, int stepSec, int startPercent, int endPercent);
+    // repeats × (work + recovery); recoveryAfterLast = false drops the last recovery.
+    Q_INVOKABLE void addIntervalSet(int repeats, int workSec, int workPercent, int restSec, int restPercent,
+                                    bool recoveryAfterLast = true);
+
+    // Multi-selection
+    Q_INVOKABLE void toggleSelected(int index);   // Ctrl/⌘-click
+    Q_INVOKABLE void selectRange(int index);      // Shift-click: primary block .. index
+    Q_INVOKABLE void selectAll();
+    // Moves the selected blocks as one contiguous group whose first block
+    // ends up at row dest (clamped).
+    Q_INVOKABLE void moveSelection(int dest);
+    Q_INVOKABLE void shiftSelection(int delta);   // -1 = one block earlier, +1 = later
+    Q_INVOKABLE void duplicateSelection();        // copies go after the last selected block
+    Q_INVOKABLE void removeSelection();
+    // Batch edits (e.g. one change applied to every selected block): block
+    // edits between beginBatch() and endBatch() emit contentChanged /
+    // selectedChanged once, at endBatch(), instead of once per block.
+    Q_INVOKABLE void beginBatch();
+    Q_INVOKABLE void endBatch();
+    // All roles of one block (as `selected`); the second argument only creates
+    // a QML binding dependency on the content.
+    Q_INVOKABLE QVariantMap block(int index, int contentRevision = 0) const;
     Q_INVOKABLE int blockAtSecond(int second) const;
     // second argument only creates a QML binding dependency on the content
     Q_INVOKABLE int blockStartSec(int index, int contentRevision = 0) const;
@@ -135,6 +176,7 @@ signals:
     void workoutChanged();
     void ftpChanged();
     void selectedChanged();
+    void selectionDurationChanged();   // on content and selection changes
     void contentChanged();
     void dirtyChanged();
     void lastErrorChanged();
@@ -144,11 +186,18 @@ private:
     void modify(int index, const std::function<void(Interval &)> &fn);
     void markDirty();
     void setError(const QString &e);
+    void resetSelection();                 // selection = { m_selected }
+    int insertRow() const;                 // where new blocks go: after the selection
+    void insertGroup(int at, const QVector<Interval> &blocks);
 
     BuilderBackend *m_backend;
     IntervalModel m_model;
     Workout m_workout;
     int m_selected = -1;
+    QVector<int> m_selection;              // ascending, contains m_selected
+    int m_batchDepth = 0;
+    bool m_batchContent = false;           // contentChanged pending until endBatch()
+    bool m_batchSelected = false;          // selectedChanged pending until endBatch()
     bool m_dirty = false;
     QString m_lastError;
 };

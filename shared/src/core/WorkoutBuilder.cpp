@@ -4,6 +4,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <numeric>
+#include <utility>
 
 namespace watt {
 
@@ -137,6 +139,8 @@ WorkoutBuilder::WorkoutBuilder(BuilderBackend *backend, QObject *parent)
     });
     // the sport (and with it the FTP) changes with the workout
     connect(this, &WorkoutBuilder::workoutChanged, this, &WorkoutBuilder::ftpChanged);
+    connect(this, &WorkoutBuilder::contentChanged, this, &WorkoutBuilder::selectionDurationChanged);
+    connect(this, &WorkoutBuilder::selectedChanged, this, &WorkoutBuilder::selectionDurationChanged);
     newWorkout();
 }
 
@@ -213,22 +217,52 @@ int WorkoutBuilder::ftp() const
 void WorkoutBuilder::setSelectedIndex(int index)
 {
     index = std::clamp(index, -1, m_model.rowCount() - 1);
-    if (m_selected == index)
+    if (m_selected == index && m_selection.size() == (index >= 0 ? 1 : 0))
         return;
     m_selected = index;
+    resetSelection();
     emit selectedChanged();
+}
+
+void WorkoutBuilder::resetSelection()
+{
+    m_selection.clear();
+    if (m_selected >= 0 && m_selected < m_model.rowCount())
+        m_selection.append(m_selected);
+}
+
+QVariantList WorkoutBuilder::selection() const
+{
+    QVariantList l;
+    for (int r : m_selection)
+        l.append(r);
+    return l;
+}
+
+int WorkoutBuilder::selectionDurationSec() const
+{
+    int total = 0;
+    for (int r : m_selection)
+        if (r >= 0 && r < m_model.rowCount())
+            total += m_model.intervals().at(r).durationSec;
+    return total;
 }
 
 QVariantMap WorkoutBuilder::selected() const
 {
+    return block(m_selected);
+}
+
+QVariantMap WorkoutBuilder::block(int index, int) const
+{
     QVariantMap m;
-    if (m_selected < 0 || m_selected >= m_model.rowCount())
+    if (index < 0 || index >= m_model.rowCount())
         return m;
-    const QModelIndex idx = m_model.index(m_selected);
+    const QModelIndex idx = m_model.index(index);
     const auto roles = m_model.roleNames();
     for (auto it = roles.cbegin(); it != roles.cend(); ++it)
         m.insert(QString::fromLatin1(it.value()), m_model.data(idx, it.key()));
-    m.insert(QStringLiteral("index"), m_selected);
+    m.insert(QStringLiteral("index"), index);
     return m;
 }
 
@@ -283,6 +317,7 @@ void WorkoutBuilder::newWorkout(const QString &sport)
                                Interval::defaultFor(BlockType::CoolDown) };
     m_model.setIntervals(blocks);
     m_selected = 1;
+    resetSelection();
     m_dirty = false;
     emit workoutChanged();
     emit contentChanged();
@@ -301,6 +336,7 @@ bool WorkoutBuilder::loadWorkout(qint64 id)
     m_model.setSport(w->sport);
     m_model.setIntervals(w->intervals);
     m_selected = w->intervals.isEmpty() ? -1 : 0;
+    resetSelection();
     m_dirty = false;
     emit workoutChanged();
     emit contentChanged();
@@ -352,7 +388,7 @@ qint64 WorkoutBuilder::save()
 void WorkoutBuilder::addBlock(const QString &type)
 {
     const BlockType t = blockTypeFromString(type);
-    int at = m_selected >= 0 ? m_selected + 1 : m_model.rowCount();
+    int at = insertRow();
     if (t == BlockType::WarmUp)
         at = 0;
     else if (t == BlockType::CoolDown)
@@ -379,6 +415,7 @@ void WorkoutBuilder::addBlock(const QString &type)
         m_model.insert(at, i);
         m_selected = at;
     }
+    resetSelection();
     markDirty();
     emit contentChanged();
     emit selectedChanged();
@@ -395,6 +432,7 @@ void WorkoutBuilder::duplicateBlock(int index)
         return;
     m_model.insert(index + 1, m_model.intervals().at(index));
     m_selected = index + 1;
+    resetSelection();
     markDirty();
     emit contentChanged();
     emit selectedChanged();
@@ -409,6 +447,7 @@ void WorkoutBuilder::removeBlock(int index)
         --m_selected;   // keep the same block selected
     if (m_selected >= m_model.rowCount())
         m_selected = m_model.rowCount() - 1;
+    resetSelection();
     markDirty();
     emit contentChanged();
     emit selectedChanged();
@@ -426,6 +465,7 @@ void WorkoutBuilder::moveBlock(int from, int to)
         --m_selected;
     else if (to <= m_selected && m_selected < from)
         ++m_selected;
+    resetSelection();
     markDirty();
     emit contentChanged();
     emit selectedChanged();
@@ -441,8 +481,30 @@ void WorkoutBuilder::modify(int index, const std::function<void(Interval &)> &fn
         return;
     m_model.update(index, i);
     markDirty();
+    if (m_batchDepth > 0) {
+        m_batchContent = true;
+        m_batchSelected = m_batchSelected || index == m_selected;
+        return;
+    }
     emit contentChanged();
     if (index == m_selected)
+        emit selectedChanged();
+}
+
+void WorkoutBuilder::beginBatch()
+{
+    ++m_batchDepth;
+}
+
+void WorkoutBuilder::endBatch()
+{
+    if (m_batchDepth == 0 || --m_batchDepth > 0)
+        return;
+    const bool content = std::exchange(m_batchContent, false);
+    const bool selected = std::exchange(m_batchSelected, false);
+    if (content)
+        emit contentChanged();
+    if (selected)
         emit selectedChanged();
 }
 
@@ -479,12 +541,6 @@ void WorkoutBuilder::setWatts(int index, int watts)
     });
 }
 
-void WorkoutBuilder::setEndWatts(int index, int watts)
-{
-    const int ftp = std::max(1, this->ftp());
-    modify(index, [&](Interval &i) { i.endPercent = std::clamp(watts, 0, 2000) / double(ftp); });
-}
-
 void WorkoutBuilder::setPercent(int index, int percent)
 {
     modify(index, [&](Interval &i) {
@@ -496,6 +552,11 @@ void WorkoutBuilder::setPercent(int index, int percent)
     });
 }
 
+void WorkoutBuilder::setEndPercent(int index, int percent)
+{
+    modify(index, [&](Interval &i) { i.endPercent = std::clamp(percent, 0, 400) / 100.0; });
+}
+
 void WorkoutBuilder::setCadence(int index, int rpm)
 {
     modify(index, [&](Interval &i) { i.cadence = std::clamp(rpm, 0, 200); });
@@ -504,6 +565,210 @@ void WorkoutBuilder::setCadence(int index, int rpm)
 void WorkoutBuilder::setRpe(int index, int zone)
 {
     modify(index, [&](Interval &i) { i.rpeZone = std::clamp(zone, -1, kZoneCount - 1); });
+}
+
+// --- generated block groups ----------------------------------------------------
+
+int WorkoutBuilder::insertRow() const
+{
+    if (!m_selection.isEmpty())
+        return m_selection.constLast() + 1;
+    return m_selected >= 0 ? m_selected + 1 : m_model.rowCount();
+}
+
+void WorkoutBuilder::insertGroup(int at, const QVector<Interval> &blocks)
+{
+    if (blocks.isEmpty())
+        return;
+    at = std::clamp(at, 0, m_model.rowCount());
+    for (int k = 0; k < blocks.size(); ++k)
+        m_model.insert(at + k, blocks.at(k));
+    m_selected = at;
+    m_selection.clear();
+    for (int k = 0; k < blocks.size(); ++k)
+        m_selection.append(at + k);
+    markDirty();
+    emit contentChanged();
+    emit selectedChanged();
+}
+
+namespace {
+constexpr int kMinBlockSec = 5;
+constexpr int kMaxBlockSec = 6 * 3600;
+constexpr int kMaxPercent = 400;
+constexpr int kMaxGroupBlocks = 100;
+
+int clampSec(int s) { return std::clamp(s, kMinBlockSec, kMaxBlockSec); }
+double fraction(int percent) { return std::clamp(percent, 0, kMaxPercent) / 100.0; }
+} // namespace
+
+void WorkoutBuilder::addRamp(int durationSec, int startPercent, int endPercent)
+{
+    Interval i = Interval::defaultFor(BlockType::Ramp);
+    i.durationSec = clampSec(durationSec);
+    i.startPercent = fraction(startPercent);
+    i.endPercent = fraction(endPercent);
+    insertGroup(insertRow(), { i });
+}
+
+void WorkoutBuilder::addSteps(int count, int stepSec, int startPercent, int endPercent)
+{
+    count = std::clamp(count, 1, kMaxGroupBlocks);
+    startPercent = std::clamp(startPercent, 0, kMaxPercent);
+    endPercent = std::clamp(endPercent, 0, kMaxPercent);
+    QVector<Interval> blocks;
+    for (int k = 0; k < count; ++k) {
+        const double f = count > 1 ? double(k) / (count - 1) : 0.0;
+        const int percent = int(std::lround(startPercent + (endPercent - startPercent) * f));
+        Interval i = Interval::defaultFor(BlockType::Steady);
+        i.name = QStringLiteral("Step %1/%2").arg(k + 1).arg(count);
+        i.durationSec = clampSec(stepSec);
+        i.startPercent = i.endPercent = fraction(percent);
+        blocks.append(i);
+    }
+    insertGroup(insertRow(), blocks);
+}
+
+void WorkoutBuilder::addIntervalSet(int repeats, int workSec, int workPercent, int restSec, int restPercent,
+                                    bool recoveryAfterLast)
+{
+    repeats = std::clamp(repeats, 1, kMaxGroupBlocks / 2);
+    QVector<Interval> blocks;
+    for (int r = 0; r < repeats; ++r) {
+        Interval work = Interval::defaultFor(BlockType::Interval);
+        work.name = QStringLiteral("Interval %1/%2").arg(r + 1).arg(repeats);
+        work.durationSec = clampSec(workSec);
+        work.startPercent = work.endPercent = fraction(workPercent);
+        work.cadence = 0;
+        blocks.append(work);
+        if (r < repeats - 1 || recoveryAfterLast) {
+            Interval rest = Interval::defaultFor(BlockType::Recovery);
+            rest.name = QStringLiteral("Recovery %1/%2").arg(r + 1).arg(repeats);
+            rest.durationSec = clampSec(restSec);
+            rest.startPercent = rest.endPercent = fraction(restPercent);
+            blocks.append(rest);
+        }
+    }
+    insertGroup(insertRow(), blocks);
+}
+
+// --- multi-selection ---------------------------------------------------------------
+
+void WorkoutBuilder::toggleSelected(int index)
+{
+    if (index < 0 || index >= m_model.rowCount())
+        return;
+    if (m_selection.contains(index)) {
+        if (m_selection.size() == 1)
+            return;   // keep at least one block selected
+        m_selection.removeOne(index);
+        if (m_selected == index)
+            m_selected = m_selection.constFirst();
+    } else {
+        m_selection.append(index);
+        std::sort(m_selection.begin(), m_selection.end());
+        m_selected = index;
+    }
+    emit selectedChanged();
+}
+
+void WorkoutBuilder::selectRange(int index)
+{
+    if (index < 0 || index >= m_model.rowCount())
+        return;
+    if (m_selected < 0) {
+        setSelectedIndex(index);
+        return;
+    }
+    const int a = std::min(m_selected, index);
+    const int b = std::max(m_selected, index);
+    m_selection.clear();
+    for (int r = a; r <= b; ++r)
+        m_selection.append(r);
+    emit selectedChanged();   // the anchor (m_selected) stays the primary block
+}
+
+void WorkoutBuilder::selectAll()
+{
+    const int n = m_model.rowCount();
+    if (n == 0)
+        return;
+    m_selection.resize(n);
+    std::iota(m_selection.begin(), m_selection.end(), 0);
+    if (m_selected < 0)
+        m_selected = 0;
+    emit selectedChanged();
+}
+
+void WorkoutBuilder::moveSelection(int dest)
+{
+    const int n = m_model.rowCount();
+    const int k = int(m_selection.size());
+    if (k == 0 || k == n)
+        return;
+    dest = std::clamp(dest, 0, n - k);
+
+    // Final order: the unselected blocks with the selected group inserted at dest.
+    QVector<int> rest;
+    for (int r = 0; r < n; ++r)
+        if (!m_selection.contains(r))
+            rest.append(r);
+    QVector<int> order = rest.mid(0, dest);
+    order += m_selection;
+    order += rest.mid(dest);
+
+    QVector<int> current(n);
+    std::iota(current.begin(), current.end(), 0);
+    if (order == current)
+        return;
+    // Applied as single moves (not a model reset) so views keep their state.
+    for (int p = 0; p < n; ++p) {
+        const int q = int(current.indexOf(order.at(p)));
+        if (q != p) {
+            m_model.move(q, p);
+            current.move(q, p);
+        }
+    }
+    const int primaryOffset = std::max(0, int(m_selection.indexOf(m_selected)));
+    for (int j = 0; j < k; ++j)
+        m_selection[j] = dest + j;
+    m_selected = dest + primaryOffset;
+    markDirty();
+    emit contentChanged();
+    emit selectedChanged();
+}
+
+void WorkoutBuilder::shiftSelection(int delta)
+{
+    if (m_selection.isEmpty() || delta == 0)
+        return;
+    const int k = int(m_selection.size());
+    const int dest = delta < 0 ? m_selection.constFirst() + delta : m_selection.constLast() - k + 1 + delta;
+    moveSelection(dest);
+}
+
+void WorkoutBuilder::duplicateSelection()
+{
+    if (m_selection.isEmpty())
+        return;
+    QVector<Interval> copies;
+    for (int r : std::as_const(m_selection))
+        copies.append(m_model.intervals().at(r));
+    insertGroup(m_selection.constLast() + 1, copies);
+}
+
+void WorkoutBuilder::removeSelection()
+{
+    if (m_selection.isEmpty())
+        return;
+    const int first = m_selection.constFirst();
+    for (int j = int(m_selection.size()) - 1; j >= 0; --j)
+        m_model.remove(m_selection.at(j));
+    m_selected = std::min(first, m_model.rowCount() - 1);
+    resetSelection();
+    markDirty();
+    emit contentChanged();
+    emit selectedChanged();
 }
 
 int WorkoutBuilder::blockAtSecond(int second) const

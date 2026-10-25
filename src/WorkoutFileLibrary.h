@@ -31,6 +31,9 @@ class WorkoutFileLibrary : public QAbstractListModel
     Q_PROPERTY(QString sportFilter READ sportFilter WRITE setSportFilter NOTIFY filterChanged)   // all|cycling|rowing
     Q_PROPERTY(int count READ count NOTIFY countChanged)              // entries after filtering
     Q_PROPERTY(int totalCount READ totalCount NOTIFY countChanged)    // all files in the folder
+    // workouts that "Export all" writes: every readable file shown in the list
+    Q_PROPERTY(int exportAllCount READ exportAllCount NOTIFY countChanged)
+    Q_PROPERTY(bool filtered READ filtered NOTIFY filterChanged)       // search / sport filter active
     Q_PROPERTY(QString currentPath READ currentPath NOTIFY currentPathChanged)   // file in the Builder ("" = unsaved)
     Q_PROPERTY(QString currentFileName READ currentFileName NOTIFY currentPathChanged)
     Q_PROPERTY(bool currentInFolder READ currentInFolder NOTIFY currentPathChanged)
@@ -75,6 +78,8 @@ public:
     void setSportFilter(const QString &sport);
     int count() const { return int(m_view.size()); }
     int totalCount() const { return int(m_entries.size()); }
+    int exportAllCount() const;
+    bool filtered() const;
     QString currentPath() const { return m_currentPath; }
     QString currentFileName() const;
     bool currentInFolder() const;
@@ -102,6 +107,12 @@ public:
     Q_INVOKABLE bool exportZwo(const QString &path);
     Q_INVOKABLE bool exportAwt(const QString &path);
     Q_INVOKABLE bool exportToZwift(const QString &zwiftFolder);   // copies <name>.zwo into it
+    // "Export all": writes every workout shown in the list (all of them when
+    // no search / sport filter is set) as one file each – format "zwo" or
+    // "awt" – into folder. Files of the same name are replaced. Returns the
+    // number of files written.
+    Q_INVOKABLE int exportAll(const QString &folder, const QString &format);
+    Q_INVOKABLE int exportAllToZwift(const QString &zwiftFolder);
     Q_INVOKABLE void reveal(const QString &path) const;          // Finder / Explorer / file manager
     Q_INVOKABLE void openFolder() const;
     Q_INVOKABLE bool ensureFolder();

@@ -11,6 +11,7 @@ Item {
     signal saveRequested()
     signal saveAsRequested()
     signal exportRequested()
+    signal exportAllRequested()
     signal importRequested()
     signal settingsRequested()
     signal helpRequested()
@@ -65,6 +66,7 @@ Item {
                 AppMenuSeparator {}
                 AppMenuItem { text: "Import .zwo / .awt…"; iconName: "import"; hint: bar.mod + "I"; onTriggered: bar.importRequested() }
                 AppMenuItem { text: "Export…"; iconName: "export"; hint: bar.mod + "E"; onTriggered: bar.exportRequested() }
+                AppMenuItem { text: "Export all workouts…"; iconName: "share"; hint: bar.modShift + "E"; enabled: Library.exportAllCount > 0; onTriggered: bar.exportAllRequested() }
                 AppMenuItem {
                     text: Qt.platform.os === "osx" ? "Show in Finder" : (Qt.platform.os === "windows" ? "Show in Explorer" : "Show in folder")
                     iconName: "search"

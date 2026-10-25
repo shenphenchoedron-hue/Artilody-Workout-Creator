@@ -53,9 +53,12 @@ FILES=(
     qml/components/ZoneLegend.qml
     qml/components/WorkoutChart.qml
     qml/components/SegmentedControl.qml
+    qml/components/BlockPreview.qml
     qml/components/AppDialog.qml
     qml/components/Toast.qml
     qml/dialogs/ConfirmDialog.qml
+    qml/dialogs/RampDialog.qml
+    qml/dialogs/IntervalSetDialog.qml
     qml/pages/BuilderPage.qml
 )
 

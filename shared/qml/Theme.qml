@@ -102,6 +102,36 @@ QtObject {
         return m + ":" + ss
     }
 
+    // Duration text -> seconds (-1 = invalid): "1:30", "1:00:00", "30s" / "30 sec",
+    // "2m" / "2 min"; a plain number means minutes (as in the Builder).
+    function parseDuration(text) {
+        var t = ("" + text).trim().toLowerCase().replace(",", ".")
+        if (t.length === 0)
+            return -1
+        if (t.indexOf(":") >= 0) {
+            var parts = t.split(":")
+            var sec = 0
+            for (var i = 0; i < parts.length; ++i) {
+                var n = parseInt(parts[i], 10)
+                if (isNaN(n) || n < 0)
+                    return -1
+                sec = sec * 60 + n
+            }
+            return sec
+        }
+        var v = parseFloat(t)
+        if (isNaN(v) || v < 0)
+            return -1
+        if (/^[\d.]+\s*(s|sec|sek|seconds?|sekunder)$/.test(t))
+            return Math.round(v)
+        return Math.round(v * 60)
+    }
+    // Next duration for a −/+ button: 15 s steps up to 2 min, 30 s above.
+    function stepDuration(sec, dir) {
+        var step = dir > 0 ? (sec >= 120 ? 30 : 15) : (sec > 120 ? 30 : 15)
+        return Math.max(5, Math.min(6 * 3600, sec + dir * step))
+    }
+
     function thousands(n) {
         return Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",")
     }

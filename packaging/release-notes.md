@@ -1,10 +1,17 @@
 **Artilody Workout Creator** is a free, open-source (GPL-3.0) desktop app for creating structured cycling and rowing workouts on any computer – with the same Workout Builder as [Artilody Watts Trainer](https://github.com/shenphenchoedron-hue/Artilody-Watts-Trainer). Save workouts as Artilody `.awt` files or export them for Zwift (`.zwo`).
 
-## What's in {{VERSION}}
+## What's new in {{VERSION}}
 
-This is the first release.
+- **Everything in % of FTP**: block cards, *Interval Settings* and the chart show power as % of FTP, so a workout scales to every rider's FTP. Watts are only shown as a hint.
+- **Interval sets with repeats**: *Intervals* asks for the number of repeats, the interval time and % FTP and the recovery time and % FTP, e.g. 5 × 30 s @ 120 % with 1 min recovery @ 55 %.
+- **Ramps and staircases**: *Ramp / Steps* builds a rising or falling staircase (number of steps, time per step, first and last step in % FTP) or one smooth ramp. Every step stays editable on its own.
+- **Select several blocks**: <kbd>Ctrl</kbd>/<kbd>⌘</kbd>-click, <kbd>Shift</kbd>-click or <kbd>Ctrl</kbd>/<kbd>⌘</kbd>+<kbd>A</kbd>, then move them together (drag, ‹ ›, <kbd>Alt</kbd>/<kbd>⌥</kbd>+<kbd>←</kbd>/<kbd>→</kbd>, right-click menu), duplicate or delete them, or change duration, power, cadence or RPE for all of them at once.
+- **Export all workouts**: *Export → Export all* writes every workout (or the ones matching your search / filter) as one `.zwo` or `.awt` file each into a folder, or copies them all into Zwift's workouts folder.
+- Your existing workouts are not changed: the `.awt` / `.zwo` formats are the same as in 1.0.0.
 
-- **The Artilody Workout Builder**: Warm Up, Steady, Intervals, Recovery, Cool Down and Ramp blocks with duration, power in watts or % FTP, ramps, cadence / stroke rate and RPE.
+## Features
+
+- **The Artilody Workout Builder**: Warm Up, Steady, Intervals, Recovery, Cool Down and Ramp blocks with duration, power in % FTP, ramps, cadence / stroke rate and RPE.
 - **Easy reordering**: drag the ⋮⋮ grip strip, use the ‹ › buttons, the right-click menu (*Move earlier / later / to start / to end, Duplicate, Delete interval*) or <kbd>Alt</kbd>/<kbd>⌥</kbd>+<kbd>←</kbd>/<kbd>→</kbd>.
 - **Cycling and rowing** workouts; watts preview from your cycling / rowing FTP; workout preview with estimated TSS.
 - **File library** of your Workouts folder (default `~/Documents/Artilody Workouts`) with search, sport filter, mini power profiles and automatic refresh.
